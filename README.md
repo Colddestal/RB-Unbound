@@ -4,6 +4,8 @@
 
 *All the cards. None of the cost.*
 
+**Project Founder:** [Colddestal](https://github.com/Colddestal
+
 ## About
 
 RB Unbound is a community-driven, free-to-play digital card game simulator project inspired by the accessibility of platforms such as Project Ignis (EDOPro).
