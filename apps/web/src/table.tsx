@@ -379,7 +379,7 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
     {error && <p className="error" role="alert">{error}</p>}
 
     <div className="play-area">
-      <CardInspector card={inspectorCard} pinned={inspectorPinned} onClear={() => setPinned('')} />
+      <CardInspector card={inspectorCard} pinned={inspectorPinned} onClear={() => setPinned('')} module={activeModule} />
       <div
         className="board"
         ref={boardRef}
