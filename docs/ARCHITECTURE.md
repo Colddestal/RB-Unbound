@@ -335,3 +335,26 @@ The divider is keyboard accessible:
 - End selects the maximum width
 
 Below the narrow-screen fallback breakpoint the layout stacks and the resize handle is hidden. No module coordinates or tabletop zone geometry are changed by this feature.
+
+
+## Default full mat and seeded secondary piles
+
+The product default is the built-in Full Mat Prototype rather than Generic Duel. Local Sandbox, new multiplayer rooms and the development server all resolve the same centralized `defaultGameModule`.
+
+The default mat exposes the expected structural zones:
+- Legend
+- Champion
+- Main Deck
+- Rune Deck
+- Base
+- Runes
+- Hand
+- Trash
+- Battlefield A / Battlefield B
+- central Combat Area
+
+Module pile definitions may optionally seed placeholder cards for development/testing using `initialCount` and `initialLabel`. The Full Mat Prototype seeds 12 hidden Rune cards per player into the Rune Deck.
+
+Hidden secondary piles can expose count-only summaries with `countPublic`. Multiplayer clients receive only the count for those piles, not card identities or ordering. Drawing from the Rune Deck is server-authoritative and moves the top placeholder Rune face-up into the public Runes row.
+
+No official card art or proprietary card data is bundled by this prototype.
