@@ -227,3 +227,18 @@ The 1v1 renderer now presents the local player at the bottom of the tabletop. Se
 Game modules may define optional normalized zone sizes in addition to positions. The renderer uses these dimensions to draw mat-style areas behind cards. Owner-scoped areas can provide separate seat positions, allowing the opponent's half of a mat to be a mirrored arrangement while shared areas such as a battlefield remain centered.
 
 The original Frontier Skirmish module demonstrates a wide tabletop with a dominant shared Battlefield plus mirrored Base, Resources, Commander, Vanguard, Deck, Resource Deck and Discard areas. This is an original structural test layout and does not include third-party branding, artwork or a licensed Riftbound module. An authorized game-specific module can map the same generic geometry system to its own exact zones later.
+
+
+## Left tabletop context dock and match history
+
+The live tabletop uses one persistent left-side context dock with three tabs:
+
+- **Card Info** — the existing privacy-aware card inspector and module metadata.
+- **Chat** — room text chat during multiplayer matches. Local sandbox explains that chat is multiplayer-only.
+- **History** — a bounded chronological activity feed for meaningful tabletop actions.
+
+Multiplayer history is server-authoritative and persisted with the room snapshot. It records match start, draw, shuffle, tap/untap, flip, zone movement, stack and unstack actions. Continuous pointer movement is intentionally excluded so dragging a card does not flood the activity feed.
+
+History follows the same hidden-information boundary as the tabletop. Card names are only written to shared history when the card is face-up in a module zone marked public. Draws and other private actions use generic wording such as "drew a card" rather than revealing card identity.
+
+The local sandbox keeps a client-side activity log for manual testing of the same dock experience.

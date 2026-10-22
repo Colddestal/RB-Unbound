@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { io, type Socket } from 'socket.io-client';
-import { CardInspector } from './card-inspector';
+import { TabletopDock } from './tabletop-dock';
 import { DeckPile } from './deck-pile';
 import { toCanonicalPoint, toViewerPoint, toViewerSeat } from './board-perspective';
 import { actionForCode, displayKey, type KeyBindings } from './controls';
@@ -48,6 +48,7 @@ type RoomSnapshot = {
   }>;
   spectators: Array<{ displayName: string }>;
   chat: Array<{ id: string; displayName: string; body: string; sentAt: string; system?: boolean }>;
+  history: Array<{ id: string; text: string; createdAt: string; kind: string; actorSeat?: 1 | 2 | 3 | 4 }>;
 };
 
 type Identity = { code: string; seat?: PlayerId; spectator: boolean };
@@ -427,7 +428,20 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
 
     {room.status === 'active' && match && <div className="match-layout">
       <div className="left-stack">
-        <CardInspector card={inspectorCard} pinned={inspectorPinned} onClear={() => setPinned('')} module={activeModule} catalog={activePackage.cards} />
+        <TabletopDock
+          card={inspectorCard}
+          pinned={inspectorPinned}
+          onClear={() => setPinned('')}
+          module={activeModule}
+          catalog={activePackage.cards}
+          chat={{
+            messages: room.chat,
+            value: chatText,
+            setValue: setChatText,
+            send: sendChat,
+          }}
+          history={room.history ?? []}
+        />
         <aside className="panel match-info">
         <h2>Match</h2>
         <p>{identity?.spectator ? 'Spectating' : `You are Seat ${identity?.seat}`}</p>
@@ -640,8 +654,6 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           <div className="hand-cards">{teammateHands.map(card => <button key={card.id} className="mini-card locked" onMouseEnter={() => setHovered(card.id)} onMouseLeave={() => setHovered('')} onClick={() => setPinned(card.id)}><span>✦</span>{card.label}</button>)}</div>
         </section>}
       </main>
-
-      <Chat room={room} value={chatText} setValue={setChatText} send={sendChat} />
     </div>}
   </div>;
 }

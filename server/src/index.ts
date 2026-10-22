@@ -4,6 +4,7 @@ import { Server, type Socket } from 'socket.io';
 import {
   addSpectator,
   appendChat,
+  appendHistory,
   createRoom,
   leaveRoom,
   occupySeat,
@@ -282,6 +283,7 @@ function publicRoom(room: RoomState) {
       connected: Boolean(socketForMember(spectator.memberId)),
     })),
     chat: room.chat.map(({ memberId: _memberId, ...message }) => message),
+    history: room.history,
   };
 }
 
@@ -328,6 +330,85 @@ function moduleZonePolicy(room: RoomState) {
     stackableZones: module.zones.filter(zone => zone.stackable).map(zone => zone.id),
     publicZones: module.zones.filter(zone => zone.visibility === 'public').map(zone => zone.id),
   };
+}
+
+function historyActorName(room: RoomState, seat: PlayerId): string {
+  return room.seats.find(item => item.seat === seat)?.displayName ?? `Player ${seat}`;
+}
+
+function visibleHistoryCardLabel(room: RoomState, table: TableState, cardId: string): string | undefined {
+  const card = table.cards.find(item => item.id === cardId);
+  if (!card || !card.faceUp) return undefined;
+  const publicZones = new Set(moduleZonePolicy(room).publicZones);
+  return publicZones.has(card.zone) ? card.label : undefined;
+}
+
+function zoneHistoryLabel(room: RoomState, zoneId: string): string {
+  const zone = moduleForRoom(room).zones.find(item => item.id === zoneId || item.kind === zoneId);
+  return zone?.label ?? zoneId;
+}
+
+function matchHistoryEntry(
+  room: RoomState,
+  before: TableState,
+  after: TableState,
+  action: TableAction,
+  seat: PlayerId,
+): { text: string; kind: 'draw' | 'shuffle' | 'tap' | 'flip' | 'zone' | 'stack'; actorSeat: PlayerId } | null {
+  if (action.type === 'move') return null;
+
+  const actor = historyActorName(room, seat);
+  if (action.type === 'draw') return { text: `${actor} drew a card.`, kind: 'draw', actorSeat: seat };
+  if (action.type === 'shuffle') return { text: `${actor} shuffled their deck.`, kind: 'shuffle', actorSeat: seat };
+
+  const afterCard = 'id' in action ? after.cards.find(card => card.id === action.id) : undefined;
+  const beforeCard = 'id' in action ? before.cards.find(card => card.id === action.id) : undefined;
+  const visibleLabel = afterCard
+    ? visibleHistoryCardLabel(room, after, afterCard.id)
+    : (beforeCard ? visibleHistoryCardLabel(room, before, beforeCard.id) : undefined);
+  const subject = visibleLabel ?? 'a card';
+
+  if (action.type === 'rotate') {
+    return {
+      text: `${actor} ${afterCard?.rotation === 90 ? 'tapped' : 'untapped'} ${subject}.`,
+      kind: 'tap',
+      actorSeat: seat,
+    };
+  }
+  if (action.type === 'flip') {
+    return {
+      text: afterCard?.faceUp && visibleLabel
+        ? `${actor} revealed ${visibleLabel}.`
+        : `${actor} flipped a card face-down.`,
+      kind: 'flip',
+      actorSeat: seat,
+    };
+  }
+  if (action.type === 'to-zone') {
+    return {
+      text: `${actor} moved ${subject} to ${zoneHistoryLabel(room, action.zone)}.`,
+      kind: 'zone',
+      actorSeat: seat,
+    };
+  }
+  if (action.type === 'stack') {
+    return { text: `${actor} stacked ${subject}.`, kind: 'stack', actorSeat: seat };
+  }
+  if (action.type === 'unstack') {
+    return { text: `${actor} unstacked ${subject}.`, kind: 'stack', actorSeat: seat };
+  }
+  return null;
+}
+
+function appendMatchHistory(room: RoomState, entry: ReturnType<typeof matchHistoryEntry>): RoomState {
+  if (!entry) return room;
+  return appendHistory(room, {
+    id: randomUUID(),
+    text: entry.text,
+    createdAt: new Date().toISOString(),
+    kind: entry.kind,
+    actorSeat: entry.actorSeat,
+  });
 }
 
 function emitMatchViews(room: RoomState): void {
@@ -442,6 +523,7 @@ async function restoreState(): Promise<void> {
     const restoredModule = findPackage(savedRoom.settings.moduleId, savedRoom.settings.moduleVersion)?.module ?? genericDuelModule;
     const room: RoomState = {
       ...savedRoom,
+      history: Array.isArray(savedRoom.history) ? savedRoom.history : [],
       settings: {
         ...savedRoom.settings,
         moduleId: restoredModule.id,
@@ -683,19 +765,25 @@ io.on('connection', socket => {
         : 'All required players must be ready before the owner can start.');
     }
 
-    rooms.set(room.code, updated);
+    const started = appendHistory(updated, {
+      id: randomUUID(),
+      text: `Match started · ${moduleForRoom(updated).name} · ${updated.settings.format.toUpperCase()}.`,
+      createdAt: new Date().toISOString(),
+      kind: 'system',
+    });
+    rooms.set(room.code, started);
     matches.set(room.code, {
       revision: 0,
       table: createInitialTableForModule(
         requiredSeats(room.settings.format),
-        packageForRoom(updated).module,
-        packageForRoom(updated).cards,
+        packageForRoom(started).module,
+        packageForRoom(started).cards,
       ),
       lastActionSequence: new Map(),
     });
-    emitRoom(updated);
+    emitRoom(started);
     io.to(room.code).emit('room:started', { code: room.code, format: room.settings.format, ruleset: room.settings.ruleset });
-    emitMatchViews(updated);
+    emitMatchViews(started);
     scheduleSave();
   });
 
@@ -719,8 +807,9 @@ io.on('connection', socket => {
     if (!action) return fail(socket, 'Unsupported match action.');
 
     const policy = moduleZonePolicy(room);
-    const updated = applyAction(match.table, action, policy.allowedZones, policy.stackableZones);
-    if (updated === match.table) {
+    const before = match.table;
+    const updated = applyAction(before, action, policy.allowedZones, policy.stackableZones);
+    if (updated === before) {
       socket.emit('match:action-rejected', { reason: 'not-allowed', sequence, lastSequence, revision: match.revision });
       return;
     }
@@ -728,7 +817,15 @@ io.on('connection', socket => {
     match.table = updated;
     match.revision += 1;
     match.lastActionSequence.set(session.memberId, sequence);
-    emitMatchViews(room);
+
+    const historyEntry = matchHistoryEntry(room, before, updated, action, session.seat);
+    const updatedRoom = appendMatchHistory(room, historyEntry);
+    if (updatedRoom !== room) {
+      rooms.set(room.code, updatedRoom);
+      emitRoom(updatedRoom);
+    }
+
+    emitMatchViews(updatedRoom);
     scheduleSave();
   });
 
