@@ -566,6 +566,8 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
                 style={{
                   left: `${position.x / 10}%`,
                   top: `${position.y / 6}%`,
+                  width: `${zone.size!.width / 10}%`,
+                  height: `${zone.size!.height / 6}%`,
                   transform: 'translate(-50%,-50%)',
                 }}
                 onDraw={amount => drawCards(amount)}
@@ -586,7 +588,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
                   : match.table.cards.filter(card => card.owner === player && card.zone === zone.id).length)
                 : match.table.cards.filter(card => card.zone === zone.id).length;
               return [<div
-                className={`module-zone-area module-zone-${zone.kind}`}
+                className={`module-zone-area module-zone-${zone.kind} module-zone-behavior-${zone.behavior ?? 'legacy'} module-zone-role-${zone.role ?? 'none'}`}
                 key={`${zone.id}-${player ?? 'shared'}`}
                 style={{
                   left: `${position.x / 10}%`,
@@ -614,7 +616,12 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
               return <button
                 key={card.id}
                 className={`card custom-zone-card ${selected === card.id ? 'selected' : ''} ${card.faceUp ? '' : `back back-${cardBack.pattern}`} ${owned ? '' : 'locked'}`}
-                style={{ left: `calc(${position.x / 10}% + ${index * 10}px)`, top: `calc(${position.y / 6}% + ${index * 10}px)`, zIndex: 30 + index }}
+                style={{
+                  left: `calc(${position.x / 10}% + ${index * 10}px)`,
+                  top: `calc(${position.y / 6}% + ${index * 10}px)`,
+                  transform: `translate(-50%,-50%) rotate(${card.rotation}deg)`,
+                  zIndex: 30 + index,
+                }}
                 onMouseEnter={() => setHovered(card.id)}
                 onMouseLeave={() => setHovered('')}
                 onClick={() => { setSelected(card.id); setMultiSelected([]); setPinned(card.id); }}
@@ -631,6 +638,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
             return <button key={card.id} className={`card discard-card ${card.faceUp ? '' : `back back-${cardBack.pattern}`}`} style={{
               left: `calc(${(position?.x ?? 900) / 10}% + ${index * 2}px)`,
               top: `calc(${(position?.y ?? 80) / 6}% + ${index * 2}px)`,
+              transform: `translate(-50%,-50%) rotate(${card.rotation}deg)`,
             }} onMouseEnter={() => setHovered(card.id)} onMouseLeave={() => setHovered('')} onClick={() => { setSelected(card.id); setPinned(card.id); }}>
             <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span><span>{card.label ?? 'Hidden card'}</span><small>P{card.owner} · {zoneLabel('discard')}</small>
           </button>;
