@@ -91,6 +91,16 @@ export function applyAction(state: TableState, action: TableAction): TableState 
   if (action.type === 'stack') {
     const target = state.cards.find(c => c.id === action.targetId);
     if (!target || target.id === card.id || target.owner !== action.actor || target.zone !== 'field' || card.zone !== 'field') return state;
+
+    // Reject cycles such as A -> B -> A.
+    let cursor: Card | undefined = target;
+    const seen = new Set<string>();
+    while (cursor?.stackOn) {
+      if (cursor.stackOn === card.id || seen.has(cursor.id)) return state;
+      seen.add(cursor.id);
+      cursor = state.cards.find(c => c.id === cursor?.stackOn);
+    }
+
     return { ...state, cards: state.cards.map(c => c.id === card.id ? { ...c, stackOn: target.id, x: target.x, y: target.y } : c) };
   }
 
