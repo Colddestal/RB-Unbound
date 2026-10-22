@@ -77,3 +77,10 @@ footer{font-size:13px;color:#9db2c8;margin-top:14px;line-height:1.5}
 .match-layout{grid-template-columns:240px minmax(0,1fr) 280px}
 @media(max-width:980px){.play-area{grid-template-columns:200px minmax(0,1fr)}.match-layout{grid-template-columns:210px minmax(0,1fr)}}
 @media(max-width:700px){.play-area{grid-template-columns:1fr}.card-inspector{position:static;min-height:0}.inspector-card-preview{height:180px}.left-stack .card-inspector{position:static}.match-layout{grid-template-columns:1fr}}
+
+button:focus-visible,select:focus-visible,input:focus-visible,.card:focus-visible,.mini-card:focus-visible{outline:3px solid #ffd17d;outline-offset:3px}
+.card:not(.locked){cursor:grab}.card:not(.locked):active{cursor:grabbing}
+.shortcut-bar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:10px;padding:9px 12px;background:#0d1826;border:1px solid #24364b;border-radius:11px;color:#8fa4b8;font-size:11px}
+.shortcut-bar strong{color:#dfe9f5;margin-right:3px}
+.shortcut-bar kbd{display:inline-flex;align-items:center;justify-content:center;min-width:27px;padding:4px 7px;border:1px solid #496078;border-bottom-width:2px;border-radius:6px;background:#17283a;color:#edf3fc;font:700 10px/1 ui-monospace,SFMono-Regular,Consolas,monospace;box-shadow:inset 0 -1px 0 #0005}
+.shortcut-bar.compact{margin-bottom:8px}
