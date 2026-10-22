@@ -99,3 +99,7 @@ button:focus-visible,select:focus-visible,input:focus-visible,.card:focus-visibl
 .options-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
 .options-actions button{background:#1b2d45;color:#edf3fc;border:1px solid #40536e;border-radius:8px;padding:9px 12px}
 .mode-switch button:last-child{margin-left:auto}
+
+.invite-code-box{display:grid;gap:5px;margin:10px 0 14px;padding:11px 12px;background:#0a1723;border:1px solid #3e6b62;border-radius:9px}
+.invite-code-box strong{font:800 24px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:4px;color:#edf3fc}
+.invite-code-box small{color:#8fa4b8}
