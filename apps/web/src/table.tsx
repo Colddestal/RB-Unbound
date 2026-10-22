@@ -299,7 +299,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       key={card.id}
       aria-label={`${faceVisible ? card.label : 'Hidden card'}, Player ${card.owner}`}
       aria-pressed={selected === card.id}
-      className={`card ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${faceVisible ? '' : `back back-${cardBack.pattern}`} ${owned ? '' : 'locked'}`}
+      className={`card ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${dragPreview?.id === card.id && mode === 'hand' ? 'drag-source' : ''} ${faceVisible ? '' : `back back-${cardBack.pattern}`} ${owned ? '' : 'locked'}`}
       style={style}
       onMouseEnter={() => setHovered(card.id)}
       onMouseLeave={() => setHovered('')}
