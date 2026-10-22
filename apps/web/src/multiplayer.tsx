@@ -37,6 +37,7 @@ type RoomSnapshot = {
     allowSpectators: boolean;
     readyCheck: boolean;
     shareTeamHands: boolean;
+    bestOf: 1 | 3;
     turnTimerSeconds: number | null;
   };
   seats: Array<{
@@ -50,6 +51,20 @@ type RoomSnapshot = {
   spectators: Array<{ displayName: string }>;
   chat: Array<{ id: string; displayName: string; body: string; sentAt: string; system?: boolean }>;
   history: Array<{ id: string; text: string; createdAt: string; kind: string; actorSeat?: 1 | 2 | 3 | 4 }>;
+  series?: {
+    bestOf: 1 | 3;
+    winsNeeded: 1 | 2;
+    status: 'active' | 'complete';
+    currentGame: number;
+    winsByTeam: Partial<Record<1 | 2 | 3 | 4, number>>;
+    games: Array<{
+      gameNumber: number;
+      status: 'setup' | 'active' | 'complete';
+      firstPlayerSeat?: 1 | 2 | 3 | 4;
+      winnerTeam?: 1 | 2 | 3 | 4;
+      selectionsBySeat: Partial<Record<1 | 2 | 3 | 4, string[]>>;
+    }>;
+  };
 };
 
 type Identity = { code: string; seat?: PlayerId; spectator: boolean };
