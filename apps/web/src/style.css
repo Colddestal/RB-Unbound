@@ -138,3 +138,7 @@ button:focus-visible,select:focus-visible,input:focus-visible,.card:focus-visibl
 .catalog-row span{color:#93a9bc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .catalog-row small{color:#687f94;text-align:right;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
 @media(max-width:800px){.catalog-row{grid-template-columns:1fr}.catalog-row small{text-align:left}}
+
+.inspector-metadata{margin-top:14px;padding-top:12px;border-top:1px solid #32465a}
+.inspector-metadata .eyebrow{display:block;margin-bottom:8px}
+.inspector-metadata dd{max-width:130px;text-align:right;overflow-wrap:anywhere}
