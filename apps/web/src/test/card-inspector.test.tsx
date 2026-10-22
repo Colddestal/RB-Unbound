@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { CardInspector } from '../card-inspector';
+import { frontierSkirmishModule, genericDuelModule } from '@rb-unbound/tabletop';
 
 describe('CardInspector', () => {
   it('shows its empty guidance when no card is visible', () => {
@@ -44,6 +45,65 @@ describe('CardInspector', () => {
       }}
     />);
 
+    expect(screen.getAllByText('Hidden card').length).toBeGreaterThan(0);
+  });
+
+  it('renders Generic Duel metadata using module-defined fields', () => {
+    render(<CardInspector
+      pinned={false}
+      onClear={() => undefined}
+      module={genericDuelModule}
+      card={{
+        id: 'generic-visible',
+        definitionId: 'amber-wisp',
+        label: 'Amber Wisp',
+        owner: 1,
+        zone: 'field',
+        faceUp: true,
+        rotation: 0,
+      }}
+    />);
+    expect(screen.getByText('Spirit')).toBeInTheDocument();
+    expect(screen.getByText('Original placeholder spirit.')).toBeInTheDocument();
+    expect(screen.getByText('starter, spirit')).toBeInTheDocument();
+  });
+
+  it('renders Frontier metadata with a different field schema', () => {
+    render(<CardInspector
+      pinned={false}
+      onClear={() => undefined}
+      module={frontierSkirmishModule}
+      card={{
+        id: 'frontier-visible',
+        definitionId: 'ridge-captain',
+        label: 'Ridge Captain',
+        owner: 1,
+        zone: 'command-post',
+        faceUp: true,
+        rotation: 0,
+      }}
+    />);
+    expect(screen.getByText('Leader')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.getByText('Command Post')).toBeInTheDocument();
+  });
+
+  it('does not resolve module metadata for a hidden card', () => {
+    render(<CardInspector
+      pinned={false}
+      onClear={() => undefined}
+      module={frontierSkirmishModule}
+      card={{
+        id: 'hidden',
+        definitionId: null,
+        label: null,
+        owner: 2,
+        zone: 'field',
+        faceUp: false,
+        rotation: 0,
+      }}
+    />);
+    expect(screen.queryByText('Leader')).not.toBeInTheDocument();
     expect(screen.getAllByText('Hidden card').length).toBeGreaterThan(0);
   });
 
