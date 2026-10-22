@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { io, type Socket } from 'socket.io-client';
 import { TabletopDock } from './tabletop-dock';
 import { DeckPile } from './deck-pile';
+import { CardContextMenu, type CardContextState } from './card-context-menu';
 import { pointInRect } from './drag-drop';
 import { toCanonicalPoint, toViewerPoint, toViewerSeat } from './board-perspective';
 import { actionForCode, displayKey, type KeyBindings } from './controls';
@@ -96,6 +97,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   const [pinned, setPinned] = useState('');
   const [dragPreview, setDragPreview] = useState<{ id: string; label: string; x: number; y: number } | null>(null);
   const [fieldDragId, setFieldDragId] = useState('');
+  const [cardContext, setCardContext] = useState<CardContextState | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const handStripRef = useRef<HTMLElement | null>(null);
   const handDragRef = useRef<{ id: string; startX: number; startY: number } | null>(null);
@@ -195,12 +197,55 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   const inspectorPinned = Boolean(pinned && !hovered);
   const canControlSelected = Boolean(identity?.seat && (selectedCards.length ? selectedCards.every(card => card.owner === identity.seat) : selectedCard?.owner === identity.seat));
   const ownFieldCards = match?.table.cards.filter(card => card.zone === 'field' && card.owner === identity?.seat && card.id !== selected) ?? [];
+  const contextCard = cardContext ? match?.table.cards.find(card => card.id === cardContext.cardId) : undefined;
+  const handZoneId = activeModule.zones.find(zone => zone.kind === 'hand')?.id;
+  const discardZoneId = activeModule.zones.find(zone => zone.kind === 'discard')?.id;
+  const deckZoneId = activeModule.zones.find(zone => zone.kind === 'deck')?.id;
+  const contextZones = activeModule.zones
+    .filter(zone => zone.behavior !== 'subzone')
+    .map(zone => ({ id: zone.id, label: zone.label }));
 
   const hiddenByOwner = useMemo(() => new Map(match?.table.hidden.map(summary => [summary.owner, summary]) ?? []), [match]);
 
   const emitAction = (action: ClientTableAction) => {
     actionSequenceRef.current += 1;
     socket?.emit('match:action', { sequence: actionSequenceRef.current, action });
+  };
+
+  const openCardContext = (event: { preventDefault: () => void; clientX: number; clientY: number }, card: PublicCard) => {
+    event.preventDefault();
+    const owned = identity?.seat === card.owner && !identity?.spectator;
+    setSelected(owned ? card.id : '');
+    setMultiSelected([]);
+    setPinned(card.id);
+    setCardContext({ cardId: card.id, x: event.clientX, y: event.clientY });
+  };
+
+  const canActOnContextCard = Boolean(
+    contextCard &&
+    identity?.seat &&
+    !identity.spectator &&
+    contextCard.owner === identity.seat,
+  );
+
+  const moveContextCard = (zone: string) => {
+    if (!contextCard || !canActOnContextCard) return;
+    emitAction({ type: 'to-zone', id: contextCard.id, zone });
+  };
+
+  const rotateContextCard = () => {
+    if (!contextCard || !canActOnContextCard) return;
+    emitAction({ type: 'rotate', id: contextCard.id });
+  };
+
+  const flipContextCard = () => {
+    if (!contextCard || !canActOnContextCard) return;
+    emitAction({ type: 'flip', id: contextCard.id });
+  };
+
+  const unstackContextCard = () => {
+    if (!contextCard?.stackOn || !canActOnContextCard) return;
+    emitAction({ type: 'unstack', id: contextCard.id });
   };
 
   const drawCards = (count: number) => {
@@ -298,6 +343,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
         }
         setPinned(card.id);
       }}
+      onContextMenu={event => openCardContext(event, card)}
       onDoubleClick={() => { if (owned) emitAction({ type: 'flip', id: card.id }); }}
       onPointerDown={event => {
         if (!owned || event.button !== 0) return;
@@ -610,26 +656,34 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           }} />}
           {fieldCards.map(renderFieldCard)}
           {activeModule.zones.filter(zone => zone.kind === 'custom').flatMap(zone => {
-            return match.table.cards.filter(card => card.zone === zone.id).map((card, index) => {
-              const position = zoneAreaPosition(zone, card.owner) ?? { x: 500, y: 300 };
-              const owned = identity?.seat === card.owner;
-              return <button
-                key={card.id}
-                className={`card custom-zone-card ${selected === card.id ? 'selected' : ''} ${card.faceUp ? '' : `back back-${cardBack.pattern}`} ${owned ? '' : 'locked'}`}
-                style={{
-                  left: `calc(${position.x / 10}% + ${index * 10}px)`,
-                  top: `calc(${position.y / 6}% + ${index * 10}px)`,
-                  transform: `translate(-50%,-50%) rotate(${card.rotation}deg)`,
-                  zIndex: 30 + index,
-                }}
-                onMouseEnter={() => setHovered(card.id)}
-                onMouseLeave={() => setHovered('')}
-                onClick={() => { setSelected(card.id); setMultiSelected([]); setPinned(card.id); }}
-              >
-                <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span>
-                <span>{card.label ?? 'Hidden card'}</span>
-                <small>P{card.owner} · {zone.label}</small>
-              </button>;
+            return match.table.cards.filter(card => card.zone === zone.id).flatMap((card, index) => {
+              const rawPositions = !zone.ownerScoped && zone.displayCopies?.length
+                ? zone.displayCopies
+                : [zoneAreaPosition(zone, card.owner) ?? { x: 500, y: 300 }];
+              const owned = identity?.seat === card.owner && !identity?.spectator;
+              return rawPositions.map((rawPosition, copyIndex) => {
+                const position = !zone.ownerScoped && zone.displayCopies?.length
+                  ? toViewerPoint(rawPosition, perspectiveViewer, room.settings.format)
+                  : rawPosition;
+                return <button
+                  key={`${card.id}-${copyIndex}`}
+                  className={`card custom-zone-card ${zone.displayCopies?.length ? 'shared-card-copy' : ''} ${selected === card.id ? 'selected' : ''} ${card.faceUp ? '' : `back back-${cardBack.pattern}`} ${owned ? '' : 'locked'}`}
+                  style={{
+                    left: `calc(${position.x / 10}% + ${index * 7}px)`,
+                    top: `calc(${position.y / 6}% + ${index * 7}px)`,
+                    transform: `translate(-50%,-50%) rotate(${card.rotation}deg)`,
+                    zIndex: 30 + index,
+                  }}
+                  onMouseEnter={() => setHovered(card.id)}
+                  onMouseLeave={() => setHovered('')}
+                  onClick={() => { setSelected(owned ? card.id : ''); setMultiSelected([]); setPinned(card.id); }}
+                  onContextMenu={event => openCardContext(event, card)}
+                >
+                  <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span>
+                  <span>{card.label ?? 'Hidden card'}</span>
+                  <small>{zone.label}</small>
+                </button>;
+              });
             });
           })}
           {discards.map((card, index) => {
@@ -639,7 +693,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
               left: `calc(${(position?.x ?? 900) / 10}% + ${index * 2}px)`,
               top: `calc(${(position?.y ?? 80) / 6}% + ${index * 2}px)`,
               transform: `translate(-50%,-50%) rotate(${card.rotation}deg)`,
-            }} onMouseEnter={() => setHovered(card.id)} onMouseLeave={() => setHovered('')} onClick={() => { setSelected(card.id); setPinned(card.id); }}>
+            }} onMouseEnter={() => setHovered(card.id)} onMouseLeave={() => setHovered('')} onClick={() => { setSelected(identity?.seat === card.owner ? card.id : ''); setPinned(card.id); }} onContextMenu={event => openCardContext(event, card)}>
             <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span><span>{card.label ?? 'Hidden card'}</span><small>P{card.owner} · {zoneLabel('discard')}</small>
           </button>;
           })}
@@ -653,6 +707,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
             onMouseEnter={() => setHovered(card.id)}
             onMouseLeave={() => setHovered('')}
             onClick={() => { setSelected(card.id); setPinned(card.id); }}
+            onContextMenu={event => openCardContext(event, card)}
             onDoubleClick={() => emitAction({ type: 'to-zone', id: card.id, zone: 'field' })}
             onPointerDown={event => {
               if (event.button !== 0) return;
@@ -706,9 +761,25 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           <span>{dragPreview.label}</span>
         </div>}
 
+        {cardContext && contextCard && <CardContextMenu
+          state={cardContext}
+          card={contextCard}
+          canAct={canActOnContextCard}
+          zones={contextZones}
+          handZoneId={handZoneId}
+          discardZoneId={discardZoneId}
+          deckZoneId={deckZoneId}
+          onInspect={() => setPinned(contextCard.id)}
+          onRotate={rotateContextCard}
+          onFlip={flipContextCard}
+          onMove={moveContextCard}
+          onUnstack={unstackContextCard}
+          onClose={() => setCardContext(null)}
+        />}
+
         {!identity?.spectator && teammateHands.length > 0 && <section className="hand-strip teammate-hand-strip">
           <strong>Teammate hand · read-only</strong>
-          <div className="hand-cards">{teammateHands.map(card => <button key={card.id} className="mini-card locked" onMouseEnter={() => setHovered(card.id)} onMouseLeave={() => setHovered('')} onClick={() => setPinned(card.id)}><span>✦</span>{card.label}</button>)}</div>
+          <div className="hand-cards">{teammateHands.map(card => <button key={card.id} className="mini-card locked" onMouseEnter={() => setHovered(card.id)} onMouseLeave={() => setHovered('')} onClick={() => setPinned(card.id)} onContextMenu={event => openCardContext(event, card)}><span>✦</span>{card.label}</button>)}</div>
         </section>}
       </main>
     </div>}
