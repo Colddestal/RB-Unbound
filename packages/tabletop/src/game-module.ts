@@ -148,6 +148,7 @@ export const frontierSkirmishModule: GameModule = {
     } },
     { id: 'hand', label: 'Orders', kind: 'hand', visibility: 'owner', ownerScoped: true },
     { id: 'field', label: 'Frontier', kind: 'field', visibility: 'public', ownerScoped: false, stackable: true },
+    { id: 'command-post', label: 'Command Post', kind: 'custom', visibility: 'public', ownerScoped: false, defaultPosition: { x: 500, y: 300 } },
     { id: 'discard', label: 'Scrapyard', kind: 'discard', visibility: 'public', ownerScoped: true, seatPositions: {
       '1': { x: 690, y: 455 },
       '2': { x: 215, y: 55 },
