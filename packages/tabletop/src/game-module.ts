@@ -14,6 +14,10 @@ export type ModuleZoneDefinition = {
     x: number;
     y: number;
   };
+  seatPositions?: Partial<Record<'1' | '2' | '3' | '4', {
+    x: number;
+    y: number;
+  }>>;
 };
 
 export type CardBackDefinition = {
@@ -70,6 +74,12 @@ export function isGameModule(value: unknown): value is GameModule {
       if (!Number.isFinite(zone.defaultPosition.x) || !Number.isFinite(zone.defaultPosition.y)) return false;
       if (zone.defaultPosition.x < 0 || zone.defaultPosition.x > 1000 || zone.defaultPosition.y < 0 || zone.defaultPosition.y > 600) return false;
     }
+    if (zone.seatPositions) {
+      for (const position of Object.values(zone.seatPositions)) {
+        if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) return false;
+        if (position.x < 0 || position.x > 1000 || position.y < 0 || position.y > 600) return false;
+      }
+    }
   }
 
   const backIds = new Set<string>();
@@ -102,10 +112,16 @@ export const genericDuelModule: GameModule = {
   description: 'Original game-neutral example module for validating the RB Unbound module format.',
   supportedFormats: ['1v1', '2v2', 'ffa4'],
   zones: [
-    { id: 'deck', label: 'Deck', kind: 'deck', visibility: 'hidden', ownerScoped: true },
+    { id: 'deck', label: 'Deck', kind: 'deck', visibility: 'hidden', ownerScoped: true, seatPositions: {
+      '1': { x: 70, y: 470 },
+      '2': { x: 850, y: 40 },
+    } },
     { id: 'hand', label: 'Hand', kind: 'hand', visibility: 'owner', ownerScoped: true },
     { id: 'field', label: 'Field', kind: 'field', visibility: 'public', ownerScoped: false, stackable: true },
-    { id: 'discard', label: 'Discard', kind: 'discard', visibility: 'public', ownerScoped: true },
+    { id: 'discard', label: 'Discard', kind: 'discard', visibility: 'public', ownerScoped: true, seatPositions: {
+      '1': { x: 850, y: 470 },
+      '2': { x: 90, y: 45 },
+    } },
   ],
   cardBacks: [
     { id: 'project-poor-grid', label: 'Project Poor Grid', pattern: 'grid' },
@@ -126,10 +142,17 @@ export const frontierSkirmishModule: GameModule = {
   description: 'Second original module used to prove that RB Unbound presentation can swap without core tabletop changes.',
   supportedFormats: ['1v1', '2v2'],
   zones: [
-    { id: 'deck', label: 'Supply', kind: 'deck', visibility: 'hidden', ownerScoped: true, defaultPosition: { x: 90, y: 500 } },
+    { id: 'deck', label: 'Supply', kind: 'deck', visibility: 'hidden', ownerScoped: true, seatPositions: {
+      '1': { x: 825, y: 455 },
+      '2': { x: 80, y: 55 },
+    } },
     { id: 'hand', label: 'Orders', kind: 'hand', visibility: 'owner', ownerScoped: true },
     { id: 'field', label: 'Frontier', kind: 'field', visibility: 'public', ownerScoped: false, stackable: true },
-    { id: 'discard', label: 'Scrapyard', kind: 'discard', visibility: 'public', ownerScoped: true, defaultPosition: { x: 850, y: 500 } },
+    { id: 'command-post', label: 'Command Post', kind: 'custom', visibility: 'public', ownerScoped: false, defaultPosition: { x: 500, y: 300 } },
+    { id: 'discard', label: 'Scrapyard', kind: 'discard', visibility: 'public', ownerScoped: true, seatPositions: {
+      '1': { x: 690, y: 455 },
+      '2': { x: 215, y: 55 },
+    } },
   ],
   cardBacks: [
     { id: 'frontier-stripes', label: 'Frontier Stripes', pattern: 'stripes' },

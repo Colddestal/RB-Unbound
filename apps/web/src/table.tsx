@@ -26,8 +26,17 @@ function shuffled<T>(items: T[]): T[] {
 export function Table({ bindings }: { bindings: KeyBindings }) {
   const [moduleId, setModuleId] = useState(genericDuelModule.id);
   const activeModule = builtInGameModules.find(module => module.id === moduleId) ?? genericDuelModule;
-  const zoneLabel = (kind: Card['zone']) => activeModule.zones.find(zone => zone.kind === kind)?.label ?? kind;
+  const zoneFor = (kind: Card['zone']) => activeModule.zones.find(zone => zone.kind === kind);
+  const zoneLabel = (kind: Card['zone']) => zoneFor(kind)?.label ?? kind;
   const cardBack = activeModule.cardBacks[0];
+  const zonePosition = (kind: Card['zone'], player: 1 | 2) => {
+    const zone = zoneFor(kind);
+    const fallback = kind === 'deck'
+      ? (player === 1 ? { x: 70, y: 470 } : { x: 850, y: 40 })
+      : (player === 1 ? { x: 850, y: 470 } : { x: 90, y: 45 });
+    const seatKey = player === 1 ? '1' : '2';
+    return zone?.seatPositions?.[seatKey] ?? zone?.defaultPosition ?? fallback;
+  };
   const [table, setTable] = useState<TableState>(() => structuredClone(initialTable));
   const [viewer, setViewer] = useState<PlayerId>(1);
   const [selected, setSelected] = useState<string>('');
@@ -165,8 +174,9 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
     }
 
     if (mode === 'discard') {
-      style.left = card.owner === 1 ? 'calc(100% - 188px)' : '102px';
-      style.top = card.owner === 1 ? 'calc(100% - 172px)' : '55px';
+      const position = zonePosition('discard', card.owner as 1 | 2);
+      style.left = `${position.x / 10}%`;
+      style.top = `${position.y / 6}%`;
       style.transform = `translate(${index * 2}px,${index * 2}px) rotate(${card.rotation}deg)`;
       style.zIndex = 8 + index;
     }
@@ -226,14 +236,20 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
 
     return <>
       <div className={`zone-label player-${player}`}>PLAYER {player} {active ? '· ACTIVE VIEW' : ''}</div>
-      <div className={`deck-zone deck-${player}`}>
+      <div className="deck-zone" style={{
+        left: `${zonePosition('deck', player).x / 10}%`,
+        top: `${zonePosition('deck', player).y / 6}%`,
+      }}>
         <div className={`pile-card back-${cardBack.pattern}`}>◆<strong>{zoneLabel('deck').toUpperCase()}</strong><span>{deck.length} cards</span></div>
         {active && <div className="pile-actions">
           <button disabled={!deck.length} onClick={() => execute({ type: 'draw', player })}>Draw</button>
           <button disabled={deck.length < 2} onClick={() => shuffleDeck(player)}>Shuffle</button>
         </div>}
       </div>
-      <div className={`discard-zone discard-${player}`}><span>{zoneLabel('discard').toUpperCase()} · {discard.length}</span></div>
+      <div className="discard-zone" style={{
+        left: `${zonePosition('discard', player).x / 10}%`,
+        top: `${zonePosition('discard', player).y / 6}%`,
+      }}><span>{zoneLabel('discard').toUpperCase()} · {discard.length}</span></div>
       {discard.slice(-6).map((card, index) => renderCard(card, index, discard, 'discard'))}
       {hand.map((card, index) => renderCard(card, index, hand, 'hand'))}
       {field.map((card, index) => renderCard(card, index, field, 'field'))}
@@ -343,6 +359,11 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
         }}
       >
         <div className="midline"><span>{zoneLabel('field').toUpperCase()}</span></div>
+        {activeModule.zones.filter(zone => zone.defaultPosition && zone.kind === 'custom').map(zone => <div
+          key={zone.id}
+          className="module-zone-marker"
+          style={{ left: `${zone.defaultPosition!.x / 10}%`, top: `${zone.defaultPosition!.y / 6}%` }}
+        >{zone.label}</div>)}
         {selectionBox && <div className="selection-box" style={{
           left: Math.min(selectionBox.startX, selectionBox.endX),
           top: Math.min(selectionBox.startY, selectionBox.endY),
