@@ -103,3 +103,7 @@ button:focus-visible,select:focus-visible,input:focus-visible,.card:focus-visibl
 .invite-code-box{display:grid;gap:5px;margin:10px 0 14px;padding:11px 12px;background:#0a1723;border:1px solid #3e6b62;border-radius:9px}
 .invite-code-box strong{font:800 24px/1.2 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:4px;color:#edf3fc}
 .invite-code-box small{color:#8fa4b8}
+
+.teammate-hand-strip{border-color:#456675;background:#0d1d28}
+.teammate-hand-strip>strong::after{content:" · shared by room setting";font-weight:400;color:#7f91a4}
+.mini-card.locked{cursor:default;opacity:.88}
