@@ -35,6 +35,14 @@ export type ChatMessage = {
   system?: boolean;
 };
 
+export type RoomHistoryEntry = {
+  id: string;
+  text: string;
+  createdAt: string;
+  kind: 'system' | 'draw' | 'shuffle' | 'tap' | 'flip' | 'zone' | 'stack';
+  actorSeat?: SeatNumber;
+};
+
 export type RoomState = {
   code: string;
   ownerMemberId: string;
@@ -44,6 +52,7 @@ export type RoomState = {
   seats: Seat[];
   spectators: { memberId: string; displayName: string }[];
   chat: ChatMessage[];
+  history: RoomHistoryEntry[];
   /** Server-only hash used to authorize joins to private rooms. Never expose in public room snapshots. */
   inviteCodeHash?: string;
 };
@@ -79,7 +88,7 @@ export function createRoom(code: string, ownerMemberId: string, ownerName: strin
     ready: false,
     ...(seat === 1 ? { memberId: ownerMemberId, displayName: ownerName } : {}),
   }));
-  return { code, ownerMemberId, status: 'lobby', settingsLocked: false, settings: merged, seats, spectators: [], chat: [] };
+  return { code, ownerMemberId, status: 'lobby', settingsLocked: false, settings: merged, seats, spectators: [], chat: [], history: [] };
 }
 
 export function setRoomSettings(room: RoomState, actor: string, patch: Partial<RoomSettings>): RoomState {
@@ -164,4 +173,11 @@ export function appendChat(room: RoomState, message: ChatMessage): RoomState {
     room.spectators.some(s => s.memberId === message.memberId);
   if (!allowed) return room;
   return { ...room, chat: [...room.chat, { ...message, body }].slice(-200) };
+}
+
+
+export function appendHistory(room: RoomState, entry: RoomHistoryEntry): RoomState {
+  const text = entry.text.trim();
+  if (!text || text.length > 300 || room.status === 'closed') return room;
+  return { ...room, history: [...room.history, { ...entry, text }].slice(-200) };
 }
