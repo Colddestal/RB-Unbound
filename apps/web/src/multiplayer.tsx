@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { io, type Socket } from 'socket.io-client';
+import { CardInspector } from './card-inspector';
 import type { ClientTableAction, PlayerId, PublicCard, TableView } from '@rb-unbound/tabletop';
 
 type MatchFormat = '1v1' | '2v2' | 'ffa4';
@@ -49,6 +50,8 @@ export function Multiplayer() {
   const [joinSeat, setJoinSeat] = useState<1 | 2 | 3 | 4>(2);
   const [chatText, setChatText] = useState('');
   const [selected, setSelected] = useState('');
+  const [hovered, setHovered] = useState('');
+  const [pinned, setPinned] = useState('');
   const boardRef = useRef<HTMLDivElement>(null);
   const actionSequenceRef = useRef(0);
 
@@ -110,6 +113,8 @@ export function Multiplayer() {
   const ownSeat = identity?.seat ? room?.seats.find(seat => seat.seat === identity.seat) : undefined;
   const isOwner = Boolean(ownSeat?.owner);
   const selectedCard = match?.table.cards.find(card => card.id === selected);
+  const inspectorCard = match?.table.cards.find(card => card.id === (hovered || pinned));
+  const inspectorPinned = Boolean(pinned && !hovered);
   const canControlSelected = Boolean(identity?.seat && selectedCard?.owner === identity.seat);
   const ownFieldCards = match?.table.cards.filter(card => card.zone === 'field' && card.owner === identity?.seat && card.id !== selected) ?? [];
 
@@ -151,7 +156,9 @@ export function Multiplayer() {
       key={card.id}
       className={`card ${selected === card.id ? 'selected' : ''} ${card.faceUp ? '' : 'back'} ${owned ? '' : 'locked'}`}
       style={style}
-      onClick={() => setSelected(card.id)}
+      onMouseEnter={() => setHovered(card.id)}
+      onMouseLeave={() => setHovered('')}
+      onClick={() => { setSelected(card.id); setPinned(card.id); }}
       onDoubleClick={() => { if (owned) emitAction({ type: 'flip', id: card.id }); }}
       onPointerDown={event => {
         if (!owned || event.button !== 0) return;
@@ -251,7 +258,9 @@ export function Multiplayer() {
     </div>}
 
     {room.status === 'active' && match && <div className="match-layout">
-      <aside className="panel match-info">
+      <div className="left-stack">
+        <CardInspector card={inspectorCard} pinned={inspectorPinned} onClear={() => setPinned('')} />
+        <aside className="panel match-info">
         <h2>Match</h2>
         <p>{identity?.spectator ? 'Spectating' : `You are Seat ${identity?.seat}`}</p>
         <p className="muted">Server revision {match.revision}</p>
@@ -263,7 +272,8 @@ export function Multiplayer() {
           return <div className="player-summary" key={player}><strong>P{player} · Team {seat.team}</strong><span>Deck {summary?.deckCount ?? 0}</span><span>Hand {summary?.handCount ?? 0}</span></div>;
         })}
         {!identity?.spectator && <div className="button-column"><button onClick={() => emitAction({ type: 'draw' })}>Draw</button><button onClick={() => emitAction({ type: 'shuffle' })}>Shuffle deck</button></div>}
-      </aside>
+        </aside>
+      </div>
 
       <main className="match-main">
         {!identity?.spectator && <section className="toolbar">
@@ -284,14 +294,14 @@ export function Multiplayer() {
         <div className="board multiplayer-board" ref={boardRef}>
           <div className="midline"><span>SERVER-SYNCED FIELD</span></div>
           {fieldCards.map(renderFieldCard)}
-          {discards.map((card, index) => <button key={card.id} className={`card discard-card ${card.faceUp ? '' : 'back'}`} style={{right:`${16 + card.owner * 18}px`, top:`${18 + index * 2}px`}} onClick={() => setSelected(card.id)}>
+          {discards.map((card, index) => <button key={card.id} className={`card discard-card ${card.faceUp ? '' : 'back'}`} style={{right:`${16 + card.owner * 18}px`, top:`${18 + index * 2}px`}} onMouseEnter={() => setHovered(card.id)} onMouseLeave={() => setHovered('')} onClick={() => { setSelected(card.id); setPinned(card.id); }}>
             <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span><span>{card.label ?? 'Hidden card'}</span><small>P{card.owner} · discard</small>
           </button>)}
         </div>
 
         {!identity?.spectator && <section className="hand-strip">
           <strong>Your hand</strong>
-          <div className="hand-cards">{ownHand.map(card => <button key={card.id} className={`mini-card ${selected === card.id ? 'selected' : ''}`} onClick={() => setSelected(card.id)} onDoubleClick={() => emitAction({ type: 'to-zone', id: card.id, zone: 'field' })}><span>✦</span>{card.label}</button>)}</div>
+          <div className="hand-cards">{ownHand.map(card => <button key={card.id} className={`mini-card ${selected === card.id ? 'selected' : ''}`} onMouseEnter={() => setHovered(card.id)} onMouseLeave={() => setHovered('')} onClick={() => { setSelected(card.id); setPinned(card.id); }} onDoubleClick={() => emitAction({ type: 'to-zone', id: card.id, zone: 'field' })}><span>✦</span>{card.label}</button>)}</div>
         </section>}
       </main>
 
