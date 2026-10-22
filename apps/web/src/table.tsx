@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEve
 import { TabletopDock, type DockHistoryEntry } from './tabletop-dock';
 import { DeckTools } from './deck-tools';
 import { DeckPile } from './deck-pile';
+import { ResizableDockColumn } from './resizable-dock-column';
 import { CardContextMenu, type CardContextState } from './card-context-menu';
 import { localHandDropRect, pointInRect } from './drag-drop';
 import { toCanonicalPoint, toViewerPoint, toViewerSeat } from './board-perspective';
@@ -586,14 +587,16 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
     {error && <p className="error" role="alert">{error}</p>}
 
     <div className="play-area">
-      <TabletopDock
-        card={inspectorCard}
-        pinned={inspectorPinned}
-        onClear={() => setPinned('')}
-        module={activeModule}
-        catalog={activePackage.cards}
-        history={history}
-      />
+      <ResizableDockColumn>
+        <TabletopDock
+          card={inspectorCard}
+          pinned={inspectorPinned}
+          onClear={() => setPinned('')}
+          module={activeModule}
+          catalog={activePackage.cards}
+          history={history}
+        />
+      </ResizableDockColumn>
       <div
         className="board"
         ref={boardRef}

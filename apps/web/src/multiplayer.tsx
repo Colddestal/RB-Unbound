@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { io, type Socket } from 'socket.io-client';
 import { TabletopDock } from './tabletop-dock';
 import { DeckPile } from './deck-pile';
+import { ResizableDockColumn } from './resizable-dock-column';
 import { CardContextMenu, type CardContextState } from './card-context-menu';
 import { pointInRect } from './drag-drop';
 import { toCanonicalPoint, toViewerPoint, toViewerSeat } from './board-perspective';
@@ -501,7 +502,8 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
     </div>}
 
     {room.status === 'active' && match && <div className="match-layout">
-      <div className="left-stack">
+      <ResizableDockColumn>
+        <div className="left-stack">
         <TabletopDock
           card={inspectorCard}
           pinned={inspectorPinned}
@@ -528,7 +530,8 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           return <div className="player-summary" key={player}><strong>P{player} · Team {seat.team}</strong><span>Deck {summary?.deckCount ?? 0}</span><span>Hand {summary?.handCount ?? 0}</span></div>;
         })}
         </aside>
-      </div>
+        </div>
+      </ResizableDockColumn>
 
       <main className="match-main">
         {!identity?.spectator && <section className="shortcut-bar compact" aria-label="Keyboard shortcuts">
