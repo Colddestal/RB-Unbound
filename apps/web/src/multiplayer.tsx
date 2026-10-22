@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { CardInspector } from './card-inspector';
+import { actionForCode, displayKey, type KeyBindings } from './controls';
 import type { ClientTableAction, PlayerId, PublicCard, TableView } from '@rb-unbound/tabletop';
 
 type MatchFormat = '1v1' | '2v2' | 'ffa4';
@@ -36,7 +37,7 @@ type MatchSnapshot = { seat?: PlayerId; spectator: boolean; revision: number; ta
 
 const SERVER_URL = 'http://127.0.0.1:3001';
 
-export function Multiplayer() {
+export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
@@ -50,6 +51,8 @@ export function Multiplayer() {
   const [joinSeat, setJoinSeat] = useState<1 | 2 | 3 | 4>(2);
   const [chatText, setChatText] = useState('');
   const [selected, setSelected] = useState('');
+  const [multiSelected, setMultiSelected] = useState<string[]>([]);
+  const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
   const [hovered, setHovered] = useState('');
   const [pinned, setPinned] = useState('');
   const boardRef = useRef<HTMLDivElement>(null);
@@ -113,9 +116,10 @@ export function Multiplayer() {
   const ownSeat = identity?.seat ? room?.seats.find(seat => seat.seat === identity.seat) : undefined;
   const isOwner = Boolean(ownSeat?.owner);
   const selectedCard = match?.table.cards.find(card => card.id === selected);
+  const selectedCards = match?.table.cards.filter(card => multiSelected.includes(card.id)) ?? [];
   const inspectorCard = match?.table.cards.find(card => card.id === (hovered || pinned));
   const inspectorPinned = Boolean(pinned && !hovered);
-  const canControlSelected = Boolean(identity?.seat && selectedCard?.owner === identity.seat);
+  const canControlSelected = Boolean(identity?.seat && (selectedCards.length ? selectedCards.every(card => card.owner === identity.seat) : selectedCard?.owner === identity.seat));
   const ownFieldCards = match?.table.cards.filter(card => card.zone === 'field' && card.owner === identity?.seat && card.id !== selected) ?? [];
 
   const hiddenByOwner = useMemo(() => new Map(match?.table.hidden.map(summary => [summary.owner, summary]) ?? []), [match]);
@@ -130,26 +134,29 @@ export function Multiplayer() {
       const target = event.target as HTMLElement | null;
       if (target?.matches('input, textarea, select, [contenteditable="true"]')) return;
 
-      if (event.key === 'Escape') {
+      const action = actionForCode(bindings, event.code);
+
+      if (action === 'clear') {
         setSelected('');
+        setMultiSelected([]);
         setPinned('');
+        event.preventDefault();
         return;
       }
 
-      if (!selectedCard || !identity?.seat || selectedCard.owner !== identity.seat || identity.spectator) return;
+      const targets = selectedCards.length ? selectedCards : (selectedCard ? [selectedCard] : []);
+      if (!action || !identity?.seat || identity.spectator || targets.length === 0 || targets.some(card => card.owner !== identity.seat)) return;
 
-      const key = event.key.toLowerCase();
-      if (key === 'r') emitAction({ type: 'rotate', id: selectedCard.id });
-      else if (key === 'f') emitAction({ type: 'flip', id: selectedCard.id });
-      else if (key === 'delete') emitAction({ type: 'to-zone', id: selectedCard.id, zone: 'discard' });
-      else if (key === 'h') emitAction({ type: 'to-zone', id: selectedCard.id, zone: 'hand' });
-      else if (key === 'p') emitAction({ type: 'to-zone', id: selectedCard.id, zone: 'field' });
-      else if (selectedCard.zone === 'field' && ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
-        event.preventDefault();
+      if (action === 'rotate') for (const card of targets) emitAction({ type: 'rotate', id: card.id });
+      else if (action === 'flip') for (const card of targets) emitAction({ type: 'flip', id: card.id });
+      else if (action === 'discard') for (const card of targets) emitAction({ type: 'to-zone', id: card.id, zone: 'discard' });
+      else if (action === 'moveHand') for (const card of targets) emitAction({ type: 'to-zone', id: card.id, zone: 'hand' });
+      else if (action === 'playField') for (const card of targets) emitAction({ type: 'to-zone', id: card.id, zone: 'field' });
+      else if (targets.every(card => card.zone === 'field') && ['moveUp', 'moveDown', 'moveLeft', 'moveRight'].includes(action)) {
         const step = event.shiftKey ? 50 : 15;
-        const dx = key === 'arrowleft' ? -step : key === 'arrowright' ? step : 0;
-        const dy = key === 'arrowup' ? -step : key === 'arrowdown' ? step : 0;
-        emitAction({ type: 'move', id: selectedCard.id, x: selectedCard.x + dx, y: selectedCard.y + dy });
+        const dx = action === 'moveLeft' ? -step : action === 'moveRight' ? step : 0;
+        const dy = action === 'moveUp' ? -step : action === 'moveDown' ? step : 0;
+        for (const card of targets) emitAction({ type: 'move', id: card.id, x: card.x + dx, y: card.y + dy });
       } else return;
 
       event.preventDefault();
@@ -157,7 +164,7 @@ export function Multiplayer() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedCard, identity?.seat, identity?.spectator, socket]);
+  }, [selectedCard, selectedCards, identity?.seat, identity?.spectator, socket, bindings]);
 
   const create = () => {
     setError('');
@@ -188,11 +195,20 @@ export function Multiplayer() {
 
     return <button
       key={card.id}
-      className={`card ${selected === card.id ? 'selected' : ''} ${card.faceUp ? '' : 'back'} ${owned ? '' : 'locked'}`}
+      className={`card ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${card.faceUp ? '' : 'back'} ${owned ? '' : 'locked'}`}
       style={style}
       onMouseEnter={() => setHovered(card.id)}
       onMouseLeave={() => setHovered('')}
-      onClick={() => { setSelected(card.id); setPinned(card.id); }}
+      onClick={event => {
+        if (event.shiftKey && owned) {
+          setMultiSelected(current => current.includes(card.id) ? current.filter(id => id !== card.id) : [...current, card.id]);
+          setSelected('');
+        } else {
+          setSelected(card.id);
+          setMultiSelected([]);
+        }
+        setPinned(card.id);
+      }}
       onDoubleClick={() => { if (owned) emitAction({ type: 'flip', id: card.id }); }}
       onPointerDown={event => {
         if (!owned || event.button !== 0) return;
@@ -317,16 +333,16 @@ export function Multiplayer() {
           <kbd>P</kbd><span>Field</span>
           <kbd>H</kbd><span>Hand</span>
           <kbd>Del</kbd><span>Discard</span>
-          <kbd>↑↓←→</kbd><span>Nudge</span>
+          <kbd>{displayKey(bindings.moveUp)}{displayKey(bindings.moveLeft)}{displayKey(bindings.moveDown)}{displayKey(bindings.moveRight)}</kbd><span>Nudge</span>
           <kbd>Esc</kbd><span>Clear</span>
         </section>}
 
         {!identity?.spectator && <section className="toolbar">
-          <strong>{selectedCard ? (selectedCard.label ?? 'Hidden card') : 'Select one of your cards'}</strong>
-          <button disabled={!canControlSelected} onClick={() => selectedCard && emitAction({ type: 'rotate', id: selectedCard.id })}>Rotate</button>
-          <button disabled={!canControlSelected} onClick={() => selectedCard && emitAction({ type: 'flip', id: selectedCard.id })}>Flip</button>
-          <button disabled={!canControlSelected} onClick={() => selectedCard && emitAction({ type: 'to-zone', id: selectedCard.id, zone: 'hand' })}>To hand</button>
-          <button disabled={!canControlSelected} onClick={() => selectedCard && emitAction({ type: 'to-zone', id: selectedCard.id, zone: 'discard' })}>Discard</button>
+          <strong>{selectedCards.length ? `${selectedCards.length} cards selected` : selectedCard ? (selectedCard.label ?? 'Hidden card') : 'Select one of your cards'}</strong>
+          <button disabled={!canControlSelected} onClick={() => { const targets = selectedCards.length ? selectedCards : (selectedCard ? [selectedCard] : []); for (const card of targets) emitAction({ type: 'rotate', id: card.id }); }}>Rotate</button>
+          <button disabled={!canControlSelected} onClick={() => { const targets = selectedCards.length ? selectedCards : (selectedCard ? [selectedCard] : []); for (const card of targets) emitAction({ type: 'flip', id: card.id }); }}>Flip</button>
+          <button disabled={!canControlSelected} onClick={() => { const targets = selectedCards.length ? selectedCards : (selectedCard ? [selectedCard] : []); for (const card of targets) emitAction({ type: 'to-zone', id: card.id, zone: 'hand' }); }}>To hand</button>
+          <button disabled={!canControlSelected} onClick={() => { const targets = selectedCards.length ? selectedCards : (selectedCard ? [selectedCard] : []); for (const card of targets) emitAction({ type: 'to-zone', id: card.id, zone: 'discard' }); }}>Discard</button>
           <select disabled={!canControlSelected || selectedCard?.zone !== 'field'} onChange={e => {
             if (selectedCard && e.target.value) emitAction({ type: 'stack', id: selectedCard.id, targetId: e.target.value });
             e.currentTarget.value = '';
@@ -336,8 +352,51 @@ export function Multiplayer() {
           <button disabled={!selectedCard?.stackOn || !canControlSelected} onClick={() => selectedCard && emitAction({ type: 'unstack', id: selectedCard.id })}>Unstack</button>
         </section>}
 
-        <div className="board multiplayer-board" ref={boardRef}>
+        <div
+          className="board multiplayer-board"
+          ref={boardRef}
+          onPointerDown={event => {
+            if (event.button !== 0 || event.currentTarget !== event.target || identity?.spectator) return;
+            const rect = event.currentTarget.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+            setSelectionBox({ startX: x, startY: y, endX: x, endY: y });
+            setSelected('');
+            setMultiSelected([]);
+            event.currentTarget.setPointerCapture(event.pointerId);
+          }}
+          onPointerMove={event => {
+            if (!selectionBox || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+            const rect = event.currentTarget.getBoundingClientRect();
+            setSelectionBox(box => box ? { ...box, endX: event.clientX - rect.left, endY: event.clientY - rect.top } : null);
+          }}
+          onPointerUp={event => {
+            if (!selectionBox || !identity?.seat) return;
+            const rect = event.currentTarget.getBoundingClientRect();
+            const left = Math.min(selectionBox.startX, selectionBox.endX);
+            const right = Math.max(selectionBox.startX, selectionBox.endX);
+            const top = Math.min(selectionBox.startY, selectionBox.endY);
+            const bottom = Math.max(selectionBox.startY, selectionBox.endY);
+            const ids = fieldCards
+              .filter(card => card.owner === identity.seat)
+              .filter(card => {
+                const cx = (card.x / 1000) * rect.width + 43;
+                const cy = (card.y / 600) * rect.height + 58;
+                return cx >= left && cx <= right && cy >= top && cy <= bottom;
+              })
+              .map(card => card.id);
+            setMultiSelected(ids);
+            setSelectionBox(null);
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }}
+        >
           <div className="midline"><span>SERVER-SYNCED FIELD</span></div>
+          {selectionBox && <div className="selection-box" style={{
+            left: Math.min(selectionBox.startX, selectionBox.endX),
+            top: Math.min(selectionBox.startY, selectionBox.endY),
+            width: Math.abs(selectionBox.endX - selectionBox.startX),
+            height: Math.abs(selectionBox.endY - selectionBox.startY),
+          }} />}
           {fieldCards.map(renderFieldCard)}
           {discards.map((card, index) => <button key={card.id} className={`card discard-card ${card.faceUp ? '' : 'back'}`} style={{right:`${16 + card.owner * 18}px`, top:`${18 + index * 2}px`}} onMouseEnter={() => setHovered(card.id)} onMouseLeave={() => setHovered('')} onClick={() => { setSelected(card.id); setPinned(card.id); }}>
             <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span><span>{card.label ?? 'Hidden card'}</span><small>P{card.owner} · discard</small>
