@@ -26,9 +26,9 @@
 
 ## Phase 3 — Multi-game platform
 - [x] Document versioned module schema and sandbox constraints
-- [ ] Support at least two independent original game modules
-- [ ] Configurable board zones and card backs
-- [ ] Game-agnostic deck import and search
+- [x] Support at least two independent original game modules
+- [x] Configurable board zones and card backs
+- [x] Game-agnostic deck import and search
 
 ## Phase 4 — Desktop and operations
 - [ ] Tauri desktop wrapper and Windows builds
