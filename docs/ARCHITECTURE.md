@@ -166,3 +166,12 @@ The tabletop action reducer accepts an active module's allowed-zone and stackabl
 Per-view projections also accept the active module's public-zone list so custom zones can participate in multiplayer hidden-information filtering without becoming universally visible by default.
 
 The development server currently uses the generic built-in module policy until room-level module selection is added in the multiplayer module PR.
+
+
+## Game-neutral cards and decks
+
+Card definitions are module-bound catalog records containing a stable card ID, module ID/version, display name and module-defined metadata. Deck files use a separate versioned schema containing the module ID/version and a list of card definition IDs.
+
+Deck validation requires every referenced card to exist in the selected module's catalog. Cross-module decks and unknown card IDs are rejected. Card search indexes names, stable IDs and metadata values without depending on a specific game's fields.
+
+When a validated deck is loaded into the local tabletop, physical card instances receive unique tabletop IDs plus a safe `definitionId` link back to the catalog. Hidden multiplayer projections redact both the card name and definition ID.
