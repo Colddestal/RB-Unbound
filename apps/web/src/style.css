@@ -149,3 +149,7 @@ button:focus-visible,select:focus-visible,input:focus-visible,.card:focus-visibl
 .module-package-row>div span{font-size:11px;color:#7f91a4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .module-package-row button{background:#1b2d45;color:#edf3fc;border:1px solid #40536e;border-radius:8px;padding:7px 9px}
 @media(max-width:700px){.module-package-row{grid-template-columns:1fr auto}.module-package-row button{grid-column:auto}}
+
+.card,.mini-card{touch-action:none;user-select:none}
+.card{cursor:grab}
+.card:active,.mini-card:active{cursor:grabbing}

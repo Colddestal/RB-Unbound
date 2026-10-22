@@ -40,10 +40,6 @@ export function CardInspector({
       item.moduleId === module.id &&
       item.moduleVersion === module.version)
     : undefined;
-  const zoneLabel = card && module
-    ? module.zones.find(zone => zone.id === card.zone || zone.kind === card.zone)?.label ?? card.zone
-    : card?.zone;
-
   return <aside className="card-inspector panel" aria-live="polite">
     <div className="inspector-heading">
       <div>
@@ -57,15 +53,7 @@ export function CardInspector({
       <div className={`inspector-card-preview ${card.faceUp ? '' : 'back'}`}>
         <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span>
         <strong>{card.label ?? 'Hidden card'}</strong>
-        <small>Player {card.owner}</small>
       </div>
-      <dl className="inspector-details">
-        <div><dt>Owner</dt><dd>Player {card.owner}</dd></div>
-        <div><dt>Zone</dt><dd>{zoneLabel}</dd></div>
-        <div><dt>Facing</dt><dd>{card.faceUp ? 'Face up' : 'Face down'}</dd></div>
-        <div><dt>Rotation</dt><dd>{card.rotation}°</dd></div>
-        <div><dt>Stacked</dt><dd>{card.stackOn ? 'Yes' : 'No'}</dd></div>
-      </dl>
 
       {definition && module?.cardFields?.length ? <section className="inspector-metadata">
         <span className="eyebrow">{module.name.toUpperCase()} DATA</span>

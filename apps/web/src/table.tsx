@@ -55,6 +55,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
   const [error, setError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
+  const handDragRef = useRef<{ id: string; startX: number; startY: number } | null>(null);
 
   const allowedZones = activeModule.zones.map(zone => zone.id);
   const stackableZones = activeModule.zones.filter(zone => zone.stackable).map(zone => zone.id);
@@ -94,7 +95,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
           return;
         }
         setModuleKey(modulePackageKey(required.module));
-        setTable(parsed.table);
+        setTable(migrateTableState(parsed.table) ?? parsed.table);
       } else {
         const migrated = migrateTableState(parsed);
         if (!migrated) throw Error('Invalid table file');
@@ -225,7 +226,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       const start = 50 - width / 2 / 10;
       style.left = `calc(${start}% + ${index * spread}px)`;
       style.top = card.owner === 2 ? '4px' : 'calc(100% - 108px)';
-      style.transform = `rotate(${card.owner === 2 ? 180 : 0}deg)`;
+      style.transform = 'rotate(0deg)';
       style.zIndex = 20 + index;
     }
 
@@ -259,9 +260,12 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       }}
       onDoubleClick={() => { if (owned && mode === 'hand') execute({ type: 'to-zone', id: card.id, zone: 'field', actor: viewer }); }}
       onPointerDown={event => {
-        if (!owned || mode !== 'field' || event.button !== 0) return;
+        if (!owned || event.button !== 0 || (mode !== 'field' && mode !== 'hand')) return;
         setSelected(card.id);
         event.currentTarget.setPointerCapture(event.pointerId);
+        handDragRef.current = mode === 'hand'
+          ? { id: card.id, startX: event.clientX, startY: event.clientY }
+          : null;
       }}
       onPointerMove={event => {
         if (!owned || mode !== 'field' || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
@@ -274,6 +278,28 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
           x: ((event.clientX - rect.left - 43) / rect.width) * 1000,
           y: ((event.clientY - rect.top - 58) / rect.height) * 600,
         });
+      }}
+      onPointerUp={event => {
+        if (!owned || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+        if (mode === 'hand' && handDragRef.current?.id === card.id) {
+          const drag = handDragRef.current;
+          const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+          const rect = boardRef.current?.getBoundingClientRect();
+          if (rect && distance > 6 &&
+            event.clientX >= rect.left && event.clientX <= rect.right &&
+            event.clientY >= rect.top && event.clientY <= rect.bottom) {
+            execute({ type: 'to-zone', id: card.id, zone: 'field', actor: viewer });
+            execute({
+              type: 'move',
+              id: card.id,
+              actor: viewer,
+              x: ((event.clientX - rect.left - 43) / rect.width) * 1000,
+              y: ((event.clientY - rect.top - 58) / rect.height) * 600,
+            });
+          }
+        }
+        handDragRef.current = null;
+        event.currentTarget.releasePointerCapture(event.pointerId);
       }}
     >
       <span className="card-symbol">{faceVisible ? '✦' : '◆'}</span>

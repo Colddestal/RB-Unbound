@@ -75,6 +75,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   const [hovered, setHovered] = useState('');
   const [pinned, setPinned] = useState('');
   const boardRef = useRef<HTMLDivElement>(null);
+  const handDragRef = useRef<{ id: string; startX: number; startY: number } | null>(null);
   const actionSequenceRef = useRef(0);
 
   useEffect(() => {
@@ -273,6 +274,11 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           x: ((event.clientX - rect.left - 43) / rect.width) * 1000,
           y: ((event.clientY - rect.top - 58) / rect.height) * 600,
         });
+      }}
+      onPointerUp={event => {
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+          event.currentTarget.releasePointerCapture(event.pointerId);
+        }
       }}
     >
       <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span>
@@ -516,7 +522,38 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
 
         {!identity?.spectator && <section className="hand-strip">
           <strong>Your hand</strong>
-          <div className="hand-cards">{ownHand.map(card => <button key={card.id} className={`mini-card ${selected === card.id ? 'selected' : ''}`} onMouseEnter={() => setHovered(card.id)} onMouseLeave={() => setHovered('')} onClick={() => { setSelected(card.id); setPinned(card.id); }} onDoubleClick={() => emitAction({ type: 'to-zone', id: card.id, zone: 'field' })}><span>✦</span>{card.label}</button>)}</div>
+          <div className="hand-cards">{ownHand.map(card => <button
+            key={card.id}
+            className={`mini-card ${selected === card.id ? 'selected' : ''}`}
+            onMouseEnter={() => setHovered(card.id)}
+            onMouseLeave={() => setHovered('')}
+            onClick={() => { setSelected(card.id); setPinned(card.id); }}
+            onDoubleClick={() => emitAction({ type: 'to-zone', id: card.id, zone: 'field' })}
+            onPointerDown={event => {
+              if (event.button !== 0) return;
+              handDragRef.current = { id: card.id, startX: event.clientX, startY: event.clientY };
+              event.currentTarget.setPointerCapture(event.pointerId);
+            }}
+            onPointerUp={event => {
+              if (!event.currentTarget.hasPointerCapture(event.pointerId) || handDragRef.current?.id !== card.id) return;
+              const drag = handDragRef.current;
+              const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
+              const rect = boardRef.current?.getBoundingClientRect();
+              if (rect && distance > 6 &&
+                event.clientX >= rect.left && event.clientX <= rect.right &&
+                event.clientY >= rect.top && event.clientY <= rect.bottom) {
+                emitAction({ type: 'to-zone', id: card.id, zone: 'field' });
+                emitAction({
+                  type: 'move',
+                  id: card.id,
+                  x: ((event.clientX - rect.left - 43) / rect.width) * 1000,
+                  y: ((event.clientY - rect.top - 58) / rect.height) * 600,
+                });
+              }
+              handDragRef.current = null;
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            }}
+          ><span>✦</span>{card.label}</button>)}</div>
         </section>}
 
         {!identity?.spectator && teammateHands.length > 0 && <section className="hand-strip teammate-hand-strip">

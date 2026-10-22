@@ -73,7 +73,7 @@ function buildDeck(owner: PlayerId, prefix: string): Card[] {
     order: index,
     x: 0,
     y: 0,
-    rotation: owner === 2 ? 180 : owner === 3 ? 90 : owner === 4 ? 270 : 0,
+    rotation: 0,
     faceUp: false,
   }));
 }
@@ -111,7 +111,7 @@ export function createInitialTableForModule(
         order: index,
         x: 0,
         y: 0,
-        rotation: owner === 2 ? 180 : owner === 3 ? 90 : owner === 4 ? 270 : 0,
+        rotation: 0,
         faceUp: false,
       } satisfies Card];
     })),
@@ -184,7 +184,7 @@ export function applyAction(
         if (!stackableSet.has(current.zone) && current.zone !== 'field') return current;
         return { ...current, x: Math.max(0, Math.min(1000, action.x)), y: Math.max(0, Math.min(600, action.y)), stackOn: undefined };
       }
-      if (action.type === 'rotate') return { ...current, rotation: (current.rotation + 90) % 360 };
+      if (action.type === 'rotate') return { ...current, rotation: current.rotation === 90 ? 0 : 90 };
       if (action.type === 'flip') return { ...current, faceUp: !current.faceUp };
       if (action.type === 'unstack') return { ...current, stackOn: undefined, x: Math.min(1000, current.x + 35), y: Math.min(600, current.y + 35) };
       if (action.type === 'to-zone') {
@@ -200,7 +200,9 @@ export function applyAction(
           ...current,
           zone: action.zone,
           order: nextOrder(state.cards, current.owner, action.zone),
-          faceUp: action.zone === 'deck' ? false : current.faceUp,
+          faceUp: action.zone === 'deck'
+            ? false
+            : (current.zone === 'hand' && action.zone === 'field' ? false : current.faceUp),
           stackOn: undefined,
           x: enteringField ? defaults[current.owner].x : current.x,
           y: enteringField ? defaults[current.owner].y : current.y,
@@ -302,13 +304,20 @@ export function isTableSaveFile(value: unknown): value is TableSaveFile {
     isTableState(file.table);
 }
 
+function normalizeTableRotations(state: TableState): TableState {
+  return {
+    ...state,
+    cards: state.cards.map(card => ({ ...card, rotation: card.rotation === 90 ? 90 : 0 })),
+  };
+}
+
 export function migrateTableState(value: unknown): TableState | null {
-  if (isTableState(value)) return value;
+  if (isTableState(value)) return normalizeTableRotations(value);
   if (!value || typeof value !== 'object') return null;
   const legacy = value as Partial<LegacyTableStateV3>;
   if (legacy.version !== 3 || !Array.isArray(legacy.cards) || legacy.cards.length > 500) return null;
   if (!legacy.cards.every(card => validCardShape(card) && CORE_ZONES.includes(card.zone as CoreCardZone))) return null;
-  return { version: 4, cards: legacy.cards.map(card => ({ ...card })) };
+  return normalizeTableRotations({ version: 4, cards: legacy.cards.map(card => ({ ...card })) });
 }
 
 export * from './game-module.js';

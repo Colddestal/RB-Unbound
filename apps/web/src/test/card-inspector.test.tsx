@@ -25,10 +25,10 @@ describe('CardInspector', () => {
     />);
 
     expect(screen.getAllByText('Test Scout').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Player 1')).toHaveLength(2);
-    expect(screen.getByText('field')).toBeInTheDocument();
-    expect(screen.getByText('Face up')).toBeInTheDocument();
-    expect(screen.getByText('90°')).toBeInTheDocument();
+    expect(screen.queryByText('Player 1')).not.toBeInTheDocument();
+    expect(screen.queryByText('field')).not.toBeInTheDocument();
+    expect(screen.queryByText('Face up')).not.toBeInTheDocument();
+    expect(screen.queryByText('90°')).not.toBeInTheDocument();
   });
 
   it('does not reveal the name of a hidden card', () => {
@@ -85,7 +85,7 @@ describe('CardInspector', () => {
     />);
     expect(screen.getByText('Leader')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
-    expect(screen.getByText('Command Post')).toBeInTheDocument();
+    expect(screen.queryByText('Command Post')).not.toBeInTheDocument();
   });
 
   it('does not resolve module metadata for a hidden card', () => {

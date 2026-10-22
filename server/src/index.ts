@@ -24,6 +24,7 @@ import {
   isModulePackage,
   modulePackageKey,
   isClientTableAction,
+  migrateTableState,
   projectTable,
   type ClientTableAction,
   type GameModule,
@@ -451,9 +452,11 @@ async function restoreState(): Promise<void> {
   }
   for (const record of snapshot.matches) {
     if (!rooms.has(record.roomCode)) continue;
+    const table = migrateTableState(record.table);
+    if (!table) continue;
     matches.set(record.roomCode, {
       revision: record.revision,
-      table: record.table,
+      table,
       lastActionSequence: new Map(record.lastActionSequence),
     });
   }
