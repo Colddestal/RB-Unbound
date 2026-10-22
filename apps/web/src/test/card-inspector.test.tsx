@@ -1,0 +1,68 @@
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { CardInspector } from '../card-inspector';
+
+describe('CardInspector', () => {
+  it('shows its empty guidance when no card is visible', () => {
+    render(<CardInspector pinned={false} onClear={() => undefined} />);
+    expect(screen.getByText('No card selected')).toBeInTheDocument();
+    expect(screen.getByText(/Hover over a visible card/i)).toBeInTheDocument();
+  });
+
+  it('renders visible card details', () => {
+    render(<CardInspector
+      pinned={false}
+      onClear={() => undefined}
+      card={{
+        id: 'test-1',
+        label: 'Test Scout',
+        owner: 1,
+        zone: 'field',
+        faceUp: true,
+        rotation: 90,
+      }}
+    />);
+
+    expect(screen.getAllByText('Test Scout').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Player 1')).toHaveLength(2);
+    expect(screen.getByText('field')).toBeInTheDocument();
+    expect(screen.getByText('Face up')).toBeInTheDocument();
+    expect(screen.getByText('90°')).toBeInTheDocument();
+  });
+
+  it('does not reveal the name of a hidden card', () => {
+    render(<CardInspector
+      pinned={false}
+      onClear={() => undefined}
+      card={{
+        id: 'hidden-1',
+        label: null,
+        owner: 2,
+        zone: 'field',
+        faceUp: false,
+        rotation: 180,
+      }}
+    />);
+
+    expect(screen.getAllByText('Hidden card').length).toBeGreaterThan(0);
+  });
+
+  it('clears a pinned card through the close control', () => {
+    const onClear = vi.fn();
+    render(<CardInspector
+      pinned
+      onClear={onClear}
+      card={{
+        id: 'test-2',
+        label: 'Pinned Card',
+        owner: 1,
+        zone: 'hand',
+        faceUp: true,
+        rotation: 0,
+      }}
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear pinned card' }));
+    expect(onClear).toHaveBeenCalledTimes(1);
+  });
+});
