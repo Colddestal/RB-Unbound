@@ -107,3 +107,18 @@ button:focus-visible,select:focus-visible,input:focus-visible,.card:focus-visibl
 .teammate-hand-strip{border-color:#456675;background:#0d1d28}
 .teammate-hand-strip>strong::after{content:" · shared by room setting";font-weight:400;color:#7f91a4}
 .mini-card.locked{cursor:default;opacity:.88}
+
+.module-picker{display:flex;align-items:center;gap:7px;color:#b9c9d8;font-size:12px}
+.module-picker select{background:#0c1725;color:#edf3fc;border:1px solid #3a5069;border-radius:8px;padding:7px 9px}
+.back-solid{background:#24384d!important}
+.back-stripes{background:repeating-linear-gradient(135deg,#183047,#183047 9px,#35536a 9px,#35536a 18px)!important}
+.back-diamonds{background:
+  linear-gradient(45deg,#2e4c63 25%,transparent 25%) -10px 0/20px 20px,
+  linear-gradient(-45deg,#2e4c63 25%,transparent 25%) -10px 0/20px 20px,
+  linear-gradient(45deg,transparent 75%,#2e4c63 75%) -10px 0/20px 20px,
+  linear-gradient(-45deg,transparent 75%,#2e4c63 75%) -10px 0/20px 20px,
+  #1c304a!important}
+.back-grid{background:
+  linear-gradient(#35536a55 1px,transparent 1px),
+  linear-gradient(90deg,#35536a55 1px,transparent 1px),
+  #1c304a!important;background-size:14px 14px!important}
