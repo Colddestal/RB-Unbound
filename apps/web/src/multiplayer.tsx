@@ -9,7 +9,7 @@ import { toCanonicalPoint, toViewerPoint, toViewerSeat } from './board-perspecti
 import { actionForCode, displayKey, type KeyBindings } from './controls';
 import {
   builtInModulePackages,
-  frontierSkirmishModule,
+  defaultGameModule,
   isModulePackage,
   zoneBehavior,
   modulePackageKey,
@@ -85,7 +85,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   const [displayName, setDisplayName] = useState('Player');
   const [roomName, setRoomName] = useState('Project Poor Table');
   const [format, setFormat] = useState<MatchFormat>('1v1');
-  const [createModuleKey, setCreateModuleKey] = useState(modulePackageKey(frontierSkirmishModule));
+  const [createModuleKey, setCreateModuleKey] = useState(modulePackageKey(defaultGameModule));
   const [createPublic, setCreatePublic] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [joinInviteCode, setJoinInviteCode] = useState('');
