@@ -191,3 +191,30 @@ Clients render module identity, labels, card-back patterns and custom zones from
 Visible physical cards may carry a catalog `definitionId`. When the active module declares card metadata fields, the shared inspector resolves that definition against the active module/version and renders only those declared fields, in module order.
 
 Because hidden multiplayer projections redact both card names and definition IDs, the inspector cannot resolve metadata for unauthorized hidden cards. Different modules can expose different schemas without branching the inspector UI.
+
+
+## Declarative module packages and compatibility
+
+A distributable RB Unbound module package uses package schema version 1 and contains:
+- one validated game-module definition
+- the card catalog for that exact module ID/version
+
+Packages remain declarative JSON. The package validator reuses the module and card validators, rejects duplicate card IDs, caps catalog size, and rejects unknown package schema versions.
+
+### Client installation
+
+The PC client can import module packages up to 200 KB into its local module library. Built-in module ID/version pairs cannot be replaced by imported content. Multiple versions of a custom module may coexist because selection keys use `moduleId@version`.
+
+Local table save files now pin the exact module ID/version. Current saves refuse to open if that exact package is unavailable and explain which module/version is required. Legacy raw v3/v4 tabletop files remain importable for compatibility.
+
+### Multiplayer distribution
+
+The host sends the selected validated package when creating a room or changing the module in the lobby. The server independently validates the package, protects built-in versions from replacement, and stores accepted custom packages in the durable server snapshot.
+
+Room snapshots include the authoritative package. Joiners therefore render the room from the server-provided module/catalog even if they never installed that package locally. Reconnect and server restart keep the same module package available.
+
+Custom module uploads are bounded by Socket.IO and per-event payload limits and remain subject to the existing room-creation/settings rate limits.
+
+### Trust boundary
+
+Module packages contain data only. Installing or joining a room with a package does not grant code execution, filesystem access, network access, dynamic imports, DOM access or automatic rules execution.
