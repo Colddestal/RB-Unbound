@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import type { RoomState } from '@rb-unbound/lobby';
-import type { PlayerId, TableState } from '@rb-unbound/tabletop';
+import type { ModulePackage, PlayerId, TableState } from '@rb-unbound/tabletop';
 
 export type PersistedSession = {
   tokenHash: string;
@@ -26,6 +26,7 @@ export type PersistenceSnapshot = {
   rooms: RoomState[];
   matches: PersistedMatch[];
   sessions: PersistedSession[];
+  modules?: ModulePackage[];
 };
 
 const statePath = resolve(process.env.RB_UNBOUND_STATE_PATH ?? '.data/server-state.json');
