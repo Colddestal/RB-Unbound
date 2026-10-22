@@ -40,7 +40,7 @@ export function Table() {
     const url = URL.createObjectURL(new Blob([JSON.stringify(table, null, 2)], { type: 'application/json' }));
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = 'rb-unbound-table-v2.json';
+    anchor.download = 'rb-unbound-table-v3.json';
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -56,7 +56,7 @@ export function Table() {
       setStackTarget('');
       setError('');
     } catch {
-      setError('Could not load this table file. Alpha v2 table files are required.');
+      setError('Could not load this table file. Alpha v3 table files are required.');
     }
   };
 
@@ -137,7 +137,7 @@ export function Table() {
     </button>;
   };
 
-  const renderPlayer = (player: PlayerId) => {
+  const renderPlayer = (player: 1 | 2) => {
     const cards = cardsByPlayer[player];
     const deck = cards.filter(card => card.zone === 'deck').sort((a, b) => a.order - b.order);
     const hand = cards.filter(card => card.zone === 'hand').sort((a, b) => a.order - b.order);

@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { Server, type Socket } from 'socket.io';
 import {
@@ -7,6 +7,7 @@ import {
   createRoom,
   leaveRoom,
   occupySeat,
+  requiredSeats,
   setReady,
   setRoomSettings,
   startRoom,
@@ -15,6 +16,16 @@ import {
   type RoomState,
   type SeatNumber,
 } from '@rb-unbound/lobby';
+import {
+  applyAction,
+  createInitialTable,
+  isClientTableAction,
+  projectTable,
+  type ClientTableAction,
+  type PlayerId,
+  type TableAction,
+  type TableState,
+} from '@rb-unbound/tabletop';
 
 const httpServer = createServer((_req, res) => {
   res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -22,12 +33,16 @@ const httpServer = createServer((_req, res) => {
 });
 
 const io = new Server(httpServer, {
-  cors: { origin: false },
+  cors: {
+    origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+    methods: ['GET', 'POST'],
+  },
   maxHttpBufferSize: 20_000,
   serveClient: false,
 });
 
 const rooms = new Map<string, RoomState>();
+const matches = new Map<string, TableState>();
 const socketRoom = new Map<string, string>();
 
 function code(): string {
@@ -75,6 +90,59 @@ function fail(socket: Socket, message: string): void {
   socket.emit('room:error', { message });
 }
 
+function shuffleIds(ids: string[]): string[] {
+  const copy = [...ids];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = randomInt(i + 1);
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+function seatFor(room: RoomState, memberId: string): PlayerId | undefined {
+  const seat = room.seats.find(item => item.memberId === memberId)?.seat;
+  return seat === 1 || seat === 2 || seat === 3 || seat === 4 ? seat : undefined;
+}
+
+function emitMatchViews(room: RoomState): void {
+  const table = matches.get(room.code);
+  if (!table) return;
+
+  for (const seat of room.seats) {
+    if (!seat.memberId) continue;
+    io.sockets.sockets.get(seat.memberId)?.emit('match:update', {
+      seat: seat.seat,
+      spectator: false,
+      table: projectTable(table, seat.seat),
+    });
+  }
+
+  for (const spectator of room.spectators) {
+    io.sockets.sockets.get(spectator.memberId)?.emit('match:update', {
+      spectator: true,
+      table: projectTable(table),
+    });
+  }
+}
+
+function toServerAction(table: TableState, seat: PlayerId, action: ClientTableAction): TableAction | null {
+  if (action.type === 'draw') return { type: 'draw', player: seat };
+  if (action.type === 'shuffle') {
+    const ids = table.cards
+      .filter(card => card.owner === seat && card.zone === 'deck')
+      .sort((a, b) => a.order - b.order)
+      .map(card => card.id);
+    return { type: 'shuffle', player: seat, orderedIds: shuffleIds(ids) };
+  }
+  if (action.type === 'move') return { ...action, actor: seat };
+  if (action.type === 'rotate') return { ...action, actor: seat };
+  if (action.type === 'flip') return { ...action, actor: seat };
+  if (action.type === 'to-zone') return { ...action, actor: seat };
+  if (action.type === 'stack') return { ...action, actor: seat };
+  if (action.type === 'unstack') return { ...action, actor: seat };
+  return null;
+}
+
 function removeFromCurrentRoom(socket: Socket): void {
   const roomCode = socketRoom.get(socket.id);
   if (!roomCode) return;
@@ -83,10 +151,16 @@ function removeFromCurrentRoom(socket: Socket): void {
   socket.leave(roomCode);
   if (!room) return;
 
+  if (room.status === 'active') {
+    emitRoom(room);
+    return;
+  }
+
   const updated = leaveRoom(room, socket.id);
   const hasMembers = updated.seats.some(seat => seat.memberId) || updated.spectators.length > 0;
   if (!hasMembers) {
     rooms.delete(roomCode);
+    matches.delete(roomCode);
     return;
   }
 
@@ -113,6 +187,7 @@ io.on('connection', socket => {
     socketRoom.set(socket.id, room.code);
     socket.join(room.code);
     socket.emit('room:created', { code: room.code });
+    socket.emit('room:identity', { code: room.code, seat: 1, spectator: false });
     emitRoom(room);
   });
 
@@ -131,6 +206,7 @@ io.on('connection', socket => {
     rooms.set(roomCode, updated);
     socketRoom.set(socket.id, roomCode);
     socket.join(roomCode);
+    socket.emit('room:identity', { code: roomCode, seat, spectator: false });
     emitRoom(updated);
   });
 
@@ -148,7 +224,9 @@ io.on('connection', socket => {
     rooms.set(roomCode, updated);
     socketRoom.set(socket.id, roomCode);
     socket.join(roomCode);
+    socket.emit('room:identity', { code: roomCode, spectator: true });
     emitRoom(updated);
+    if (updated.status === 'active') emitMatchViews(updated);
   });
 
   socket.on('room:ready', (payload: { ready?: unknown } = {}) => {
@@ -178,9 +256,7 @@ io.on('connection', socket => {
       Number.isInteger(payload.turnTimerSeconds) &&
       payload.turnTimerSeconds >= 15 &&
       payload.turnTimerSeconds <= 3600
-    )) {
-      safePatch.turnTimerSeconds = payload.turnTimerSeconds;
-    }
+    )) safePatch.turnTimerSeconds = payload.turnTimerSeconds;
 
     const updated = setRoomSettings(room, socket.id, safePatch);
     if (updated === room) return fail(socket, 'Only the room owner can change unlocked lobby settings.');
@@ -202,8 +278,40 @@ io.on('connection', socket => {
     }
 
     rooms.set(room.code, updated);
+    matches.set(room.code, createInitialTable(requiredSeats(room.settings.format)));
     emitRoom(updated);
-    io.to(room.code).emit('room:started', { code: room.code, format: room.settings.format, ruleset: room.settings.ruleset });
+    io.to(room.code).emit('room:started', {
+      code: room.code,
+      format: room.settings.format,
+      ruleset: room.settings.ruleset,
+    });
+    emitMatchViews(updated);
+  });
+
+  socket.on('match:action', (payload: unknown) => {
+    const roomCode = socketRoom.get(socket.id);
+    const room = roomCode ? rooms.get(roomCode) : undefined;
+    const table = roomCode ? matches.get(roomCode) : undefined;
+    if (!room || room.status !== 'active' || !table) return fail(socket, 'No active match.');
+    if (!isClientTableAction(payload)) return fail(socket, 'Invalid match action.');
+
+    const seat = seatFor(room, socket.id);
+    if (!seat) return fail(socket, 'Spectators cannot manipulate the table.');
+
+    const action = toServerAction(table, seat, payload);
+    if (!action) return fail(socket, 'Unsupported match action.');
+
+    const updated = applyAction(table, action);
+    if (updated === table) return fail(socket, 'That action is not allowed.');
+
+    matches.set(room.code, updated);
+    emitMatchViews(room);
+  });
+
+  socket.on('match:request-state', () => {
+    const roomCode = socketRoom.get(socket.id);
+    const room = roomCode ? rooms.get(roomCode) : undefined;
+    if (room?.status === 'active') emitMatchViews(room);
   });
 
   socket.on('chat:send', (payload: { body?: unknown } = {}) => {
