@@ -27,6 +27,11 @@ export type ModuleZoneDefinition = {
   pile?: {
     drawToZoneId?: string;
     shuffle?: boolean;
+    /** Optional placeholder cards to seed into this pile for prototype/demo modules. */
+    initialCount?: number;
+    initialLabel?: string;
+    /** Whether clients may see the number of cards in this hidden pile. */
+    countPublic?: boolean;
   };
   stackable?: boolean;
   defaultPosition?: {
@@ -111,6 +116,9 @@ export function isGameModule(value: unknown): value is GameModule {
       if (zoneBehavior(zone) !== 'pile') return false;
       if (zone.pile.drawToZoneId !== undefined && !validId(zone.pile.drawToZoneId)) return false;
       if (zone.pile.shuffle !== undefined && typeof zone.pile.shuffle !== 'boolean') return false;
+      if (zone.pile.initialCount !== undefined && (!Number.isInteger(zone.pile.initialCount) || zone.pile.initialCount < 0 || zone.pile.initialCount > 100)) return false;
+      if (zone.pile.initialLabel !== undefined && (typeof zone.pile.initialLabel !== 'string' || zone.pile.initialLabel.length < 1 || zone.pile.initialLabel.length > 80)) return false;
+      if (zone.pile.countPublic !== undefined && typeof zone.pile.countPublic !== 'boolean') return false;
     }
     if (zone.stackable !== undefined && typeof zone.stackable !== 'boolean') return false;
     if (zone.defaultPosition) {
@@ -211,7 +219,7 @@ export const genericDuelModule: GameModule = {
   description: 'Original game-neutral example module for validating the RB Unbound module format.',
   supportedFormats: ['1v1', '2v2', 'ffa4'],
   zones: [
-    { id: 'deck', label: 'Deck', kind: 'deck', visibility: 'hidden', ownerScoped: true, behavior: 'pile', role: 'main-deck', pile: { drawToZoneId: 'hand', shuffle: true }, seatPositions: {
+    { id: 'deck', label: 'Deck', kind: 'deck', visibility: 'hidden', ownerScoped: true, behavior: 'pile', role: 'main-deck', pile: { drawToZoneId: 'hand', shuffle: true, countPublic: true }, seatPositions: {
       '1': { x: 70, y: 470 },
       '2': { x: 850, y: 40 },
     } },
@@ -236,9 +244,9 @@ export const genericDuelModule: GameModule = {
 export const frontierSkirmishModule: GameModule = {
   schemaVersion: 1,
   id: 'frontier-skirmish',
-  name: 'Frontier Skirmish',
+  name: 'Full Mat Prototype',
   version: '1.0.0',
-  description: 'Original location-based proof module with a wide mirrored mat, two objectives, player bases, separate resource/main piles and dedicated leader slots.',
+  description: 'Location-based proof module with a mirrored mat, Legend and Champion slots, Main and Rune piles, player Bases, Runes rows and two shared Battlefields.',
   supportedFormats: ['1v1', '2v2'],
   zones: [
     {
@@ -298,12 +306,12 @@ export const frontierSkirmishModule: GameModule = {
     },
     {
       id: 'resources',
-      label: 'Resources',
+      label: 'Runes',
       kind: 'custom',
       visibility: 'public',
       ownerScoped: true,
       behavior: 'area',
-      role: 'resources',
+      role: 'runes',
       seatPositions: {
         '1': { x: 500, y: 485 },
         '2': { x: 500, y: 115 },
@@ -312,12 +320,12 @@ export const frontierSkirmishModule: GameModule = {
     },
     {
       id: 'commander',
-      label: 'Leader',
+      label: 'Legend',
       kind: 'custom',
       visibility: 'public',
       ownerScoped: true,
       behavior: 'slot',
-      role: 'leader',
+      role: 'legend',
       capacity: 1,
       seatPositions: {
         '1': { x: 925, y: 515 },
@@ -342,13 +350,13 @@ export const frontierSkirmishModule: GameModule = {
     },
     {
       id: 'resource-deck',
-      label: 'Resource Deck',
+      label: 'Rune Deck',
       kind: 'custom',
       visibility: 'hidden',
       ownerScoped: true,
       behavior: 'pile',
-      role: 'resource-deck',
-      pile: { drawToZoneId: 'resources', shuffle: true },
+      role: 'rune-deck',
+      pile: { drawToZoneId: 'resources', shuffle: true, initialCount: 12, initialLabel: 'Rune', countPublic: true },
       seatPositions: {
         '1': { x: 75, y: 390 },
         '2': { x: 75, y: 50 },
@@ -438,3 +446,5 @@ export const builtInGameModules: GameModule[] = [
   genericDuelModule,
   frontierSkirmishModule,
 ];
+
+export const defaultGameModule = frontierSkirmishModule;

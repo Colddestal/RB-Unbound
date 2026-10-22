@@ -29,7 +29,7 @@ export type TableAction =
   | { type: 'move'; id: string; x: number; y: number; actor: PlayerId }
   | { type: 'rotate'; id: string; actor: PlayerId }
   | { type: 'flip'; id: string; actor: PlayerId }
-  | { type: 'draw'; player: PlayerId; fromZone?: CardZone; toZone?: CardZone }
+  | { type: 'draw'; player: PlayerId; fromZone?: CardZone; toZone?: CardZone; faceUp?: boolean }
   | { type: 'to-zone'; id: string; zone: CardZone; actor: PlayerId }
   | { type: 'shuffle'; player: PlayerId; zone?: CardZone; orderedIds: string[] }
   | { type: 'stack'; id: string; targetId: string; actor: PlayerId }
@@ -55,7 +55,12 @@ export type PublicCard = Omit<Card, 'label' | 'id' | 'definitionId'> & {
 export type TableView = {
   version: 4;
   cards: PublicCard[];
-  hidden: Array<{ owner: PlayerId; deckCount: number; handCount: number }>;
+  hidden: Array<{
+    owner: PlayerId;
+    deckCount: number;
+    handCount: number;
+    zoneCounts?: Record<string, number>;
+  }>;
 };
 
 const samples = [
@@ -97,24 +102,48 @@ export function createInitialTableForModule(
     .filter(card => card.moduleId === module.id && card.moduleVersion === module.version)
     .map(card => [card.id, card]));
 
+  const seededPiles = module.zones.filter(zone =>
+    zone.behavior === 'pile' &&
+    zone.id !== 'deck' &&
+    (zone.pile?.initialCount ?? 0) > 0
+  );
+
   return {
     version: 4,
-    cards: unique.flatMap(owner => deck.cards.flatMap((definitionId, index) => {
-      const definition = catalog.get(definitionId);
-      if (!definition) return [];
-      return [{
-        id: `p${owner}-${definitionId}-${index + 1}`,
-        definitionId,
-        label: definition.name,
-        owner,
-        zone: 'deck',
-        order: index,
-        x: 0,
-        y: 0,
-        rotation: 0,
-        faceUp: false,
-      } satisfies Card];
-    })),
+    cards: unique.flatMap(owner => {
+      const mainDeck = deck.cards.flatMap((definitionId, index) => {
+        const definition = catalog.get(definitionId);
+        if (!definition) return [];
+        return [{
+          id: `p${owner}-${definitionId}-${index + 1}`,
+          definitionId,
+          label: definition.name,
+          owner,
+          zone: 'deck',
+          order: index,
+          x: 0,
+          y: 0,
+          rotation: 0,
+          faceUp: false,
+        } satisfies Card];
+      });
+
+      const extraPiles = seededPiles.flatMap(zone =>
+        Array.from({ length: zone.pile?.initialCount ?? 0 }, (_, index) => ({
+          id: `p${owner}-${zone.id}-${index + 1}`,
+          label: `${zone.pile?.initialLabel ?? zone.label} ${index + 1}`,
+          owner,
+          zone: zone.id,
+          order: index,
+          x: 0,
+          y: 0,
+          rotation: 0,
+          faceUp: false,
+        } satisfies Card))
+      );
+
+      return [...mainDeck, ...extraPiles];
+    }),
   };
 }
 
@@ -151,7 +180,7 @@ export function applyAction(
     return {
       ...state,
       cards: state.cards.map(card => card.id === top.id
-        ? { ...card, zone: toZone, order: nextOrder(state.cards, action.player, toZone), faceUp: toZone === 'hand', stackOn: undefined }
+        ? { ...card, zone: toZone, order: nextOrder(state.cards, action.player, toZone), faceUp: action.faceUp ?? (toZone === 'hand'), stackOn: undefined }
         : card),
     };
   }
@@ -225,16 +254,27 @@ export function projectTable(
   viewer?: PlayerId,
   visibleHandOwners?: PlayerId[],
   publicZones: readonly string[] = ['field', 'discard'],
+  publicCountZones: readonly string[] = ['deck'],
 ): TableView {
   const privateHandOwners = new Set<PlayerId>(visibleHandOwners ?? (viewer ? [viewer] : []));
   const publicZoneIds = new Set(publicZones);
+  const publicCountZoneIds = new Set(publicCountZones);
   const hidden = ([1, 2, 3, 4] as PlayerId[])
-    .map(owner => ({
-      owner,
-      deckCount: state.cards.filter(card => card.owner === owner && card.zone === 'deck').length,
-      handCount: state.cards.filter(card => card.owner === owner && card.zone === 'hand').length,
-    }))
-    .filter(summary => summary.deckCount || summary.handCount);
+    .map(owner => {
+      const zoneCounts = Object.fromEntries(
+        [...publicCountZoneIds].map(zoneId => [
+          zoneId,
+          state.cards.filter(card => card.owner === owner && card.zone === zoneId).length,
+        ]),
+      );
+      return {
+        owner,
+        deckCount: zoneCounts.deck ?? 0,
+        handCount: state.cards.filter(card => card.owner === owner && card.zone === 'hand').length,
+        zoneCounts,
+      };
+    })
+    .filter(summary => summary.handCount || Object.values(summary.zoneCounts).some(count => count > 0));
 
   const cards: PublicCard[] = [];
   for (const card of state.cards) {

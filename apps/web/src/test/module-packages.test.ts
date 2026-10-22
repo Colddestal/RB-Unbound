@@ -56,11 +56,20 @@ describe('module package loading and compatibility', () => {
     expect(result.error).toMatch(/cannot be replaced/i);
   });
 
-  it('creates custom-module match state from that package catalog', () => {
+  it('creates custom-module match state from its catalog plus declared seeded piles', () => {
     const custom = customPackage();
     const table = createInitialTableForModule([1, 2], custom.module, custom.cards);
     expect(table.cards.length).toBeGreaterThan(0);
-    expect(table.cards.every(card => card.definitionId && custom.cards.some(def => def.id === card.definitionId))).toBe(true);
+
+    const mainDeckCards = table.cards.filter(card => card.zone === 'deck');
+    expect(mainDeckCards.length).toBeGreaterThan(0);
+    expect(mainDeckCards.every(card =>
+      card.definitionId && custom.cards.some(def => def.id === card.definitionId)
+    )).toBe(true);
+
+    const seededRunes = table.cards.filter(card => card.zone === 'resource-deck');
+    expect(seededRunes).toHaveLength(24);
+    expect(seededRunes.every(card => card.definitionId === undefined)).toBe(true);
   });
 
   it('pins module id and version in table save files', () => {
