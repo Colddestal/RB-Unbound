@@ -69,7 +69,9 @@ export function Multiplayer() {
       window.sessionStorage.setItem('rb-unbound-session', payload.token);
       actionSequenceRef.current = 0;
     });
-    client.on('session:resumed', () => { actionSequenceRef.current = 0; });
+    client.on('session:resumed', (payload: { lastActionSequence?: number }) => {
+      actionSequenceRef.current = Number.isSafeInteger(payload.lastActionSequence) ? Number(payload.lastActionSequence) : 0;
+    });
     client.on('session:invalid', () => {
       window.sessionStorage.removeItem('rb-unbound-session');
       setRoom(null);
