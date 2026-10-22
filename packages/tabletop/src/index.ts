@@ -1,5 +1,9 @@
 export type PlayerId = 1 | 2 | 3 | 4;
-export type CardZone = 'deck' | 'hand' | 'field' | 'discard';
+export type CoreCardZone = 'deck' | 'hand' | 'field' | 'discard';
+export type CardZone = string;
+
+const CORE_ZONES: CoreCardZone[] = ['deck', 'hand', 'field', 'discard'];
+const ZONE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 export type Card = {
   id: string;
@@ -14,7 +18,8 @@ export type Card = {
   stackOn?: string;
 };
 
-export type TableState = { version: 3; cards: Card[] };
+export type TableState = { version: 4; cards: Card[] };
+export type LegacyTableStateV3 = { version: 3; cards: Array<Omit<Card, 'zone'> & { zone: CoreCardZone }> };
 
 export type TableAction =
   | { type: 'move'; id: string; x: number; y: number; actor: PlayerId }
@@ -43,7 +48,7 @@ export type PublicCard = Omit<Card, 'label' | 'id'> & {
 };
 
 export type TableView = {
-  version: 3;
+  version: 4;
   cards: PublicCard[];
   hidden: Array<{ owner: PlayerId; deckCount: number; handCount: number }>;
 };
@@ -59,7 +64,7 @@ function buildDeck(owner: PlayerId, prefix: string): Card[] {
     id: `${prefix}-${index + 1}`,
     label,
     owner,
-    zone: 'deck' as const,
+    zone: 'deck',
     order: index,
     x: 0,
     y: 0,
@@ -71,7 +76,7 @@ function buildDeck(owner: PlayerId, prefix: string): Card[] {
 export function createInitialTable(players: PlayerId[]): TableState {
   const unique = [...new Set(players)].filter((player): player is PlayerId => player >= 1 && player <= 4);
   return {
-    version: 3,
+    version: 4,
     cards: unique.flatMap(player => buildDeck(player, `p${player}`)),
   };
 }
@@ -87,7 +92,14 @@ function nextOrder(cards: Card[], owner: PlayerId, zone: CardZone): number {
   return orders.length ? Math.max(...orders) + 1 : 0;
 }
 
-export function applyAction(state: TableState, action: TableAction): TableState {
+export function applyAction(
+  state: TableState,
+  action: TableAction,
+  allowedZones: readonly string[] = CORE_ZONES,
+  stackableZones: readonly string[] = ['field'],
+): TableState {
+  const zoneSet = new Set(allowedZones);
+  const stackableSet = new Set(stackableZones);
   if (action.type === 'reset') return createInitialTable(action.players ?? [1, 2]);
 
   if (action.type === 'draw') {
@@ -116,7 +128,7 @@ export function applyAction(state: TableState, action: TableAction): TableState 
 
   if (action.type === 'stack') {
     const target = state.cards.find(c => c.id === action.targetId);
-    if (!target || target.id === card.id || target.owner !== action.actor || target.zone !== 'field' || card.zone !== 'field') return state;
+    if (!target || target.id === card.id || target.owner !== action.actor || !stackableSet.has(target.zone) || target.zone !== card.zone || !stackableSet.has(card.zone)) return state;
     let cursor: Card | undefined = target;
     const seen = new Set<string>();
     while (cursor?.stackOn) {
@@ -132,13 +144,14 @@ export function applyAction(state: TableState, action: TableAction): TableState 
     cards: state.cards.map(current => {
       if (current.id !== card.id) return current;
       if (action.type === 'move') {
-        if (current.zone !== 'field') return current;
+        if (!stackableSet.has(current.zone) && current.zone !== 'field') return current;
         return { ...current, x: Math.max(0, Math.min(1000, action.x)), y: Math.max(0, Math.min(600, action.y)), stackOn: undefined };
       }
       if (action.type === 'rotate') return { ...current, rotation: (current.rotation + 90) % 360 };
       if (action.type === 'flip') return { ...current, faceUp: !current.faceUp };
       if (action.type === 'unstack') return { ...current, stackOn: undefined, x: Math.min(1000, current.x + 35), y: Math.min(600, current.y + 35) };
       if (action.type === 'to-zone') {
+        if (!zoneSet.has(action.zone)) return current;
         const enteringField = action.zone === 'field';
         const defaults: Record<PlayerId, { x: number; y: number }> = {
           1: { x: 430, y: 360 },
@@ -187,7 +200,7 @@ export function projectTable(state: TableState, viewer?: PlayerId, visibleHandOw
     });
   }
 
-  return { version: 3, cards, hidden };
+  return { version: 4, cards, hidden };
 }
 
 export function isClientTableAction(value: unknown): value is ClientTableAction {
@@ -197,22 +210,33 @@ export function isClientTableAction(value: unknown): value is ClientTableAction 
   if (typeof action.id !== 'string' || action.id.length > 100) return false;
   if (action.type === 'rotate' || action.type === 'flip' || action.type === 'unstack') return true;
   if (action.type === 'move') return typeof action.x === 'number' && Number.isFinite(action.x) && typeof action.y === 'number' && Number.isFinite(action.y);
-  if (action.type === 'to-zone') return action.zone === 'deck' || action.zone === 'hand' || action.zone === 'field' || action.zone === 'discard';
+  if (action.type === 'to-zone') return typeof action.zone === 'string' && ZONE_ID_PATTERN.test(action.zone);
   return action.type === 'stack' && typeof action.targetId === 'string' && action.targetId.length <= 100;
+}
+
+function validCardShape(c: Partial<Card>): boolean {
+  return typeof c.id === 'string' && c.id.length <= 100 &&
+    typeof c.label === 'string' && c.label.length <= 120 &&
+    (c.owner === 1 || c.owner === 2 || c.owner === 3 || c.owner === 4) &&
+    typeof c.zone === 'string' && ZONE_ID_PATTERN.test(c.zone) &&
+    Number.isFinite(c.order) && Number.isFinite(c.x) && Number.isFinite(c.y) &&
+    Number.isFinite(c.rotation) && typeof c.faceUp === 'boolean' &&
+    (c.stackOn === undefined || (typeof c.stackOn === 'string' && c.stackOn.length <= 100));
 }
 
 export function isTableState(value: unknown): value is TableState {
   if (!value || typeof value !== 'object') return false;
   const v = value as Partial<TableState>;
-  const zones: CardZone[] = ['deck', 'hand', 'field', 'discard'];
-  return v.version === 3 && Array.isArray(v.cards) && v.cards.length <= 500 && v.cards.every(c =>
-    typeof c.id === 'string' && c.id.length <= 100 &&
-    typeof c.label === 'string' && c.label.length <= 120 &&
-    (c.owner === 1 || c.owner === 2 || c.owner === 3 || c.owner === 4) &&
-    zones.includes(c.zone) &&
-    Number.isFinite(c.order) && Number.isFinite(c.x) && Number.isFinite(c.y) &&
-    Number.isFinite(c.rotation) && typeof c.faceUp === 'boolean' &&
-    (c.stackOn === undefined || (typeof c.stackOn === 'string' && c.stackOn.length <= 100)));
+  return v.version === 4 && Array.isArray(v.cards) && v.cards.length <= 500 && v.cards.every(validCardShape);
+}
+
+export function migrateTableState(value: unknown): TableState | null {
+  if (isTableState(value)) return value;
+  if (!value || typeof value !== 'object') return null;
+  const legacy = value as Partial<LegacyTableStateV3>;
+  if (legacy.version !== 3 || !Array.isArray(legacy.cards) || legacy.cards.length > 500) return null;
+  if (!legacy.cards.every(card => validCardShape(card) && CORE_ZONES.includes(card.zone as CoreCardZone))) return null;
+  return { version: 4, cards: legacy.cards.map(card => ({ ...card })) };
 }
 
 export * from './game-module.js';
