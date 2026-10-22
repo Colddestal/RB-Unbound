@@ -91,8 +91,11 @@ export const builtInCardCatalog: CardDefinition[] = [
   { id: 'spark-drone', moduleId: 'frontier-skirmish', moduleVersion: '1.0.0', name: 'Spark Drone', metadata: { class: 'Drone', power: 1, tags: ['drone', 'starter'] } },
 ];
 
-export function starterDeckForModule(module: GameModule): DeckDefinition {
-  const ids = builtInCardCatalog.filter(card => card.moduleId === module.id && card.moduleVersion === module.version).map(card => card.id);
+export function starterDeckForModule(
+  module: GameModule,
+  catalog: readonly CardDefinition[] = builtInCardCatalog,
+): DeckDefinition {
+  const ids = catalog.filter(card => card.moduleId === module.id && card.moduleVersion === module.version).map(card => card.id);
   return {
     schemaVersion: 1,
     moduleId: module.id,
