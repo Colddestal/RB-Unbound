@@ -338,9 +338,15 @@ function moduleZonePolicy(room: RoomState) {
     stackableZones: module.zones.filter(zone => zone.stackable).map(zone => zone.id),
     publicZones: module.zones.filter(zone => zone.visibility === 'public').map(zone => zone.id),
     pileZones: module.zones.filter(zone => zoneBehavior(zone) === 'pile').map(zone => zone.id),
+    publicCountZones: module.zones
+      .filter(zone => zone.kind === 'deck' || zone.pile?.countPublic === true)
+      .map(zone => zone.id),
     drawDestinations: new Map(module.zones.flatMap(zone => {
       const capabilities = pileCapabilities(module, zone);
-      return capabilities.drawToZoneId ? [[zone.id, capabilities.drawToZoneId] as const] : [];
+      if (!capabilities.drawToZoneId) return [];
+      const destination = module.zones.find(candidate => candidate.id === capabilities.drawToZoneId);
+      const faceUp = destination?.visibility === 'public' || zoneBehavior(destination!) === 'hand';
+      return [[zone.id, { toZone: capabilities.drawToZoneId, faceUp }] as const];
     })),
     shuffleZones: module.zones.filter(zone => pileCapabilities(module, zone).shuffle).map(zone => zone.id),
   };
@@ -436,7 +442,13 @@ function emitMatchViews(room: RoomState): void {
       seat: seat.seat,
       spectator: false,
       revision: match.revision,
-      table: projectTable(match.table, seat.seat as PlayerId, visibleHandsForSeat(room, seat.seat as PlayerId), policy.publicZones),
+      table: projectTable(
+        match.table,
+        seat.seat as PlayerId,
+        visibleHandsForSeat(room, seat.seat as PlayerId),
+        policy.publicZones,
+        policy.publicCountZones,
+      ),
     });
   }
 
@@ -444,7 +456,7 @@ function emitMatchViews(room: RoomState): void {
     socketForMember(spectator.memberId)?.emit('match:update', {
       spectator: true,
       revision: match.revision,
-      table: projectTable(match.table, undefined, undefined, policy.publicZones),
+      table: projectTable(match.table, undefined, undefined, policy.publicZones, policy.publicCountZones),
     });
   }
 }
@@ -453,14 +465,14 @@ function toServerAction(
   table: TableState,
   seat: PlayerId,
   action: ClientTableAction,
-  drawDestinations: ReadonlyMap<string, string>,
+  drawDestinations: ReadonlyMap<string, { toZone: string; faceUp: boolean }>,
   shuffleZones: readonly string[],
 ): TableAction | null {
   if (action.type === 'draw') {
     const fromZone = action.fromZone ?? 'deck';
-    const toZone = drawDestinations.get(fromZone);
-    if (!toZone) return null;
-    return { type: 'draw', player: seat, fromZone, toZone };
+    const policy = drawDestinations.get(fromZone);
+    if (!policy) return null;
+    return { type: 'draw', player: seat, fromZone, toZone: policy.toZone, faceUp: policy.faceUp };
   }
   if (action.type === 'shuffle') {
     const zone = action.zone ?? 'deck';
@@ -654,7 +666,9 @@ io.on('connection', socket => {
     const suppliedPackage = payload.modulePackage === undefined ? undefined : registerPackage(payload.modulePackage);
     if (payload.modulePackage !== undefined && !suppliedPackage) return fail(socket, 'Invalid or unsupported module package.');
     const requestedPackage = suppliedPackage ??
-      (payload.moduleId === undefined ? builtInModulePackages[0] : findPackage(payload.moduleId, payload.moduleVersion));
+      (payload.moduleId === undefined
+        ? builtInModulePackages.find(bundle => bundle.module.id === 'frontier-skirmish') ?? builtInModulePackages[0]
+        : findPackage(payload.moduleId, payload.moduleVersion));
     if (!requestedPackage) return fail(socket, 'That game module/version is not installed on the server.');
     const selectedModule = requestedPackage.module;
     if (!moduleSupportsFormat(selectedModule, format)) return fail(socket, 'That game module does not support this match format.');
