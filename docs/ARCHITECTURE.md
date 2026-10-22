@@ -105,3 +105,31 @@ Changing a public lobby to private generates a new invite code. Changing a priva
 Team-private information is configurable rather than assumed. In 2v2 rooms the host may enable **Share teammate hands** before the match starts. When enabled, each player receives card identities for their own hand and their teammate's hand; the teammate hand is rendered read-only and cannot be manipulated by the other player.
 
 Opponents never receive those private hand identities, spectators receive no private hands, and deck identities/order remain server-only regardless of the sharing setting. The setting is disabled automatically outside 2v2 formats.
+
+
+## Versioned game-module schema
+
+RB Unbound game modules use a declarative schema rather than executable plugin code. Schema version 1 defines module identity/version, supported match formats, board zones, card-back descriptors and optional card metadata fields.
+
+The schema is intentionally bounded:
+- stable lowercase IDs
+- at most 32 zones
+- at most 16 card backs
+- at most 32 card metadata fields
+- normalized tabletop coordinates within the core 1000×600 space
+- known zone kinds, visibility hints and card-back patterns only
+
+### Module sandbox boundary
+
+A module definition is data, not code. Version 1 does **not** allow:
+- JavaScript callbacks
+- arbitrary rules functions
+- network requests
+- filesystem access
+- dynamic imports
+- DOM manipulation
+- automatic game-rule execution
+
+Future game-specific automation, where legally and technically appropriate, must live behind a separate explicitly reviewed rules-engine interface. The base module format remains portable, inspectable and safe to validate before use.
+
+The built-in `generic-duel` module is original placeholder content used to prove the schema without incorporating third-party game assets or rules.

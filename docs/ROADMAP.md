@@ -25,7 +25,7 @@
 - [ ] Durable snapshots, reliable action sequencing, tests
 
 ## Phase 3 — Multi-game platform
-- [ ] Document versioned module schema and sandbox constraints
+- [x] Document versioned module schema and sandbox constraints
 - [ ] Support at least two independent original game modules
 - [ ] Configurable board zones and card backs
 - [ ] Game-agnostic deck import and search
