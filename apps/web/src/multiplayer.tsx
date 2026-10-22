@@ -125,6 +125,40 @@ export function Multiplayer() {
     socket?.emit('match:action', { sequence: actionSequenceRef.current, action });
   };
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.matches('input, textarea, select, [contenteditable="true"]')) return;
+
+      if (event.key === 'Escape') {
+        setSelected('');
+        setPinned('');
+        return;
+      }
+
+      if (!selectedCard || !identity?.seat || selectedCard.owner !== identity.seat || identity.spectator) return;
+
+      const key = event.key.toLowerCase();
+      if (key === 'r') emitAction({ type: 'rotate', id: selectedCard.id });
+      else if (key === 'f') emitAction({ type: 'flip', id: selectedCard.id });
+      else if (key === 'delete') emitAction({ type: 'to-zone', id: selectedCard.id, zone: 'discard' });
+      else if (key === 'h') emitAction({ type: 'to-zone', id: selectedCard.id, zone: 'hand' });
+      else if (key === 'p') emitAction({ type: 'to-zone', id: selectedCard.id, zone: 'field' });
+      else if (selectedCard.zone === 'field' && ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
+        event.preventDefault();
+        const step = event.shiftKey ? 50 : 15;
+        const dx = key === 'arrowleft' ? -step : key === 'arrowright' ? step : 0;
+        const dy = key === 'arrowup' ? -step : key === 'arrowdown' ? step : 0;
+        emitAction({ type: 'move', id: selectedCard.id, x: selectedCard.x + dx, y: selectedCard.y + dy });
+      } else return;
+
+      event.preventDefault();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedCard, identity?.seat, identity?.spectator, socket]);
+
   const create = () => {
     setError('');
     socket?.emit('room:create', { displayName, roomName, format });
@@ -276,6 +310,17 @@ export function Multiplayer() {
       </div>
 
       <main className="match-main">
+        {!identity?.spectator && <section className="shortcut-bar compact" aria-label="Keyboard shortcuts">
+          <strong>Keyboard</strong>
+          <kbd>R</kbd><span>Rotate</span>
+          <kbd>F</kbd><span>Flip</span>
+          <kbd>P</kbd><span>Field</span>
+          <kbd>H</kbd><span>Hand</span>
+          <kbd>Del</kbd><span>Discard</span>
+          <kbd>↑↓←→</kbd><span>Nudge</span>
+          <kbd>Esc</kbd><span>Clear</span>
+        </section>}
+
         {!identity?.spectator && <section className="toolbar">
           <strong>{selectedCard ? (selectedCard.label ?? 'Hidden card') : 'Select one of your cards'}</strong>
           <button disabled={!canControlSelected} onClick={() => selectedCard && emitAction({ type: 'rotate', id: selectedCard.id })}>Rotate</button>
