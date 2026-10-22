@@ -184,3 +184,10 @@ Room settings now pin an exact game module ID and version. The server validates 
 The selected module is persisted with the room snapshot and restored after reconnect or server restart. Match creation uses that module's built-in starter deck, and authoritative action validation/projection uses that module's allowed, stackable and public zones.
 
 Clients render module identity, labels, card-back patterns and custom zones from the server-provided room settings. The client cannot choose a different module after the match starts because room settings are locked with the rest of the lobby configuration.
+
+
+## Module-aware card inspector metadata
+
+Visible physical cards may carry a catalog `definitionId`. When the active module declares card metadata fields, the shared inspector resolves that definition against the active module/version and renders only those declared fields, in module order.
+
+Because hidden multiplayer projections redact both card names and definition IDs, the inspector cannot resolve metadata for unauthorized hidden cards. Different modules can expose different schemas without branching the inspector UI.
