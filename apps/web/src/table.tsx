@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { CardInspector } from './card-inspector';
+import { TabletopDock, type DockHistoryEntry } from './tabletop-dock';
 import { DeckTools } from './deck-tools';
 import { DeckPile } from './deck-pile';
 import { toCanonicalPoint, toViewerPoint, toViewerSeat } from './board-perspective';
@@ -67,9 +67,20 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
   const [pinned, setPinned] = useState<string>('');
   const [stackTarget, setStackTarget] = useState<string>('');
   const [error, setError] = useState('');
+  const [history, setHistory] = useState<DockHistoryEntry[]>([]);
+  const historyCounterRef = useRef(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const handDragRef = useRef<{ id: string; startX: number; startY: number } | null>(null);
+
+  const addLocalHistory = (text: string) => {
+    historyCounterRef.current += 1;
+    setHistory(current => [...current, {
+      id: `local-${Date.now()}-${historyCounterRef.current}`,
+      text,
+      createdAt: new Date().toISOString(),
+    }].slice(-200));
+  };
 
   const allowedZones = activeModule.zones.map(zone => zone.id);
   const stackableZones = activeModule.zones.filter(zone => zone.stackable).map(zone => zone.id);
@@ -125,6 +136,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
 
   const drawCards = (player: PlayerId, count: number) => {
     for (let index = 0; index < count; index += 1) execute({ type: 'draw', player });
+    addLocalHistory(`Player ${player} drew ${count === 1 ? 'a card' : `${count} cards`}.`);
   };
 
   const shuffleDeck = (player: PlayerId) => {
@@ -133,6 +145,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       .sort((a, b) => a.order - b.order)
       .map(card => card.id);
     execute({ type: 'shuffle', player, orderedIds: shuffled(ids) });
+    addLocalHistory(`Player ${player} shuffled their deck.`);
   };
 
   const loadDeckForPlayerOne = (deck: DeckDefinition) => {
@@ -166,23 +179,44 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
     setMultiSelected([]);
     setPinned('');
     setError('');
+    addLocalHistory(`Loaded ${deck.name} for Player 1.`);
   };
 
   const targets = selectedCards.length ? selectedCards : (selectedCard ? [selectedCard] : []);
 
   const moveTargets = (zone: Card['zone']) => {
-    for (const card of targets) {
-      if (card.owner === viewer) execute({ type: 'to-zone', id: card.id, zone, actor: viewer });
+    const ownedTargets = targets.filter(card => card.owner === viewer);
+    for (const card of ownedTargets) {
+      execute({ type: 'to-zone', id: card.id, zone, actor: viewer });
+    }
+    if (ownedTargets.length) {
+      addLocalHistory(`Player ${viewer} moved ${ownedTargets.length === 1 ? 'a card' : `${ownedTargets.length} cards`} to ${zoneLabel(zone)}.`);
     }
     if (zone !== 'field') setStackTarget('');
   };
 
   const rotateTargets = () => {
-    for (const card of targets) if (card.owner === viewer) execute({ type: 'rotate', id: card.id, actor: viewer });
+    const ownedTargets = targets.filter(card => card.owner === viewer);
+    for (const card of ownedTargets) execute({ type: 'rotate', id: card.id, actor: viewer });
+    if (ownedTargets.length) addLocalHistory(`Player ${viewer} changed the tap state of ${ownedTargets.length === 1 ? 'a card' : `${ownedTargets.length} cards`}.`);
   };
 
   const flipTargets = () => {
-    for (const card of targets) if (card.owner === viewer) execute({ type: 'flip', id: card.id, actor: viewer });
+    const ownedTargets = targets.filter(card => card.owner === viewer);
+    for (const card of ownedTargets) execute({ type: 'flip', id: card.id, actor: viewer });
+    if (ownedTargets.length) addLocalHistory(`Player ${viewer} flipped ${ownedTargets.length === 1 ? 'a card' : `${ownedTargets.length} cards`}.`);
+  };
+
+  const stackSelected = () => {
+    if (!selectedCard || !stackTarget || selectedCard.zone !== 'field') return;
+    execute({ type: 'stack', id: selectedCard.id, targetId: stackTarget, actor: viewer });
+    addLocalHistory(`Player ${viewer} stacked ${selectedCard.label}.`);
+  };
+
+  const unstackSelected = () => {
+    if (!selectedCard?.stackOn) return;
+    execute({ type: 'unstack', id: selectedCard.id, actor: viewer });
+    addLocalHistory(`Player ${viewer} unstacked ${selectedCard.label}.`);
   };
 
   useEffect(() => {
@@ -278,7 +312,12 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
         }
         setPinned(card.id);
       }}
-      onDoubleClick={() => { if (owned && mode === 'hand') execute({ type: 'to-zone', id: card.id, zone: 'field', actor: viewer }); }}
+      onDoubleClick={() => {
+        if (owned && mode === 'hand') {
+          execute({ type: 'to-zone', id: card.id, zone: 'field', actor: viewer });
+          addLocalHistory(`Player ${viewer} played a card to ${zoneLabel('field')} face-down.`);
+        }
+      }}
       onPointerDown={event => {
         if (!owned || event.button !== 0 || (mode !== 'field' && mode !== 'hand')) return;
         setSelected(card.id);
@@ -313,6 +352,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
             event.clientX >= rect.left && event.clientX <= rect.right &&
             event.clientY >= rect.top && event.clientY <= rect.bottom) {
             execute({ type: 'to-zone', id: card.id, zone: 'field', actor: viewer });
+            addLocalHistory(`Player ${viewer} played a card to ${zoneLabel('field')} face-down.`);
             const point = toCanonicalPoint({
               x: ((event.clientX - rect.left - 43) / rect.width) * 1000,
               y: ((event.clientY - rect.top - 58) / rect.height) * 600,
@@ -425,8 +465,8 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
         <option value="">Stack target…</option>
         {ownFieldCards.map(card => <option key={card.id} value={card.id}>{card.label}</option>)}
       </select>
-      <button disabled={!selectedCard || !stackTarget || selectedCard.zone !== 'field'} onClick={() => selectedCard && execute({ type: 'stack', id: selectedCard.id, targetId: stackTarget, actor: viewer })}>Stack</button>
-      <button disabled={!selectedCard?.stackOn} onClick={() => selectedCard && execute({ type: 'unstack', id: selectedCard.id, actor: viewer })}>Unstack</button>
+      <button disabled={!selectedCard || !stackTarget || selectedCard.zone !== 'field'} onClick={stackSelected}>Stack</button>
+      <button disabled={!selectedCard?.stackOn} onClick={unstackSelected}>Unstack</button>
     </section>
 
     <section className="shortcut-bar" aria-label="Keyboard shortcuts">
@@ -444,7 +484,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
     <section className="filebar">
       <button onClick={save}>Export table</button>
       <button onClick={() => fileRef.current?.click()}>Import table</button>
-      <button onClick={() => { execute({ type: 'reset' }); setSelected(''); }}>Reset</button>
+      <button onClick={() => { execute({ type: 'reset' }); setSelected(''); addLocalHistory('Reset the local table.'); }}>Reset</button>
       <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={e => { void load(e.target.files?.[0]); e.target.value = ''; }} />
       <span className="chip">Manual rules · Local sandbox</span>
     </section>
@@ -452,7 +492,14 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
     {error && <p className="error" role="alert">{error}</p>}
 
     <div className="play-area">
-      <CardInspector card={inspectorCard} pinned={inspectorPinned} onClear={() => setPinned('')} module={activeModule} catalog={activePackage.cards} />
+      <TabletopDock
+        card={inspectorCard}
+        pinned={inspectorPinned}
+        onClear={() => setPinned('')}
+        module={activeModule}
+        catalog={activePackage.cards}
+        history={history}
+      />
       <div
         className="board"
         ref={boardRef}
