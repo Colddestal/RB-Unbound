@@ -287,3 +287,26 @@ Rooms now have a generic `bestOf` setting of 1 or 3. Starting a room initializes
 Setup-selection IDs are deliberately module-defined. The core does not know whether a selection represents a battlefield, map, objective, scenario, or another game-specific choice. Completed game records remain in the series so a rules module can later evaluate used/remaining selections across a multi-game match.
 
 The generic series helpers support setup -> active -> complete transitions and advance a best-of-three match until one team reaches two game wins. The development server exposes and persists this series data through normal room snapshots. Older persisted rooms restore as Bo1.
+
+
+## Wide mirrored location mat
+
+The tabletop coordinate system is 1000×600, so the PC renderer now uses the matching 5:3 aspect ratio instead of squeezing those coordinates into 16:9. This preserves the intended vertical spacing between player bands and reduces pile/slot overlap.
+
+The original Frontier Skirmish proof module demonstrates the location-oriented mat structure using original/generic terminology:
+
+- dedicated Leader and Champion single-card slots
+- independent Main Deck and Resource Deck piles
+- Trash pile
+- player Base
+- separate Resources row
+- top/bottom Hand bands
+- two shared Battlefield objective slots
+- a large central Combat Area surrounding those objectives
+- private facedown subzones attached to each objective in module data
+
+Seat 2 uses the existing 180-degree viewer transform, so either 1v1 player sees their own side at the bottom while card faces themselves remain upright except for explicit 90-degree tap rotation.
+
+The left Card Info / Chat / History dock remains outside the board coordinate space. On normal PC widths the app reserves 270px for that dock and a minimum wide tabletop column, rather than overlaying the dock on game zones.
+
+This proof layout intentionally uses original module labels and assets. Game-specific names/artwork remain separate from the generic engine and authorization boundary.
