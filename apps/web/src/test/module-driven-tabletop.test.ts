@@ -14,9 +14,9 @@ describe('built-in module rendering data', () => {
     const frontierField = frontierSkirmishModule.zones.find(zone => zone.kind === 'field')?.label;
 
     expect(genericDeck).toBe('Deck');
-    expect(frontierDeck).toBe('Deck');
+    expect(frontierDeck).toBe('Main Deck');
     expect(genericField).toBe('Field');
-    expect(frontierField).toBe('Battlefield');
+    expect(frontierField).toBe('Combat Area');
   });
 
   it('uses different card-back descriptors between modules', () => {
@@ -29,7 +29,7 @@ describe('built-in module rendering data', () => {
     const frontierDeck = frontierSkirmishModule.zones.find(zone => zone.kind === 'deck');
 
     expect(genericDeck?.seatPositions?.['1']).toEqual({ x: 70, y: 470 });
-    expect(frontierDeck?.seatPositions?.['1']).toEqual({ x: 885, y: 355 });
+    expect(frontierDeck?.seatPositions?.['1']).toEqual({ x: 900, y: 425 });
     expect(genericDeck?.seatPositions?.['1']).not.toEqual(frontierDeck?.seatPositions?.['1']);
   });
 
@@ -38,22 +38,49 @@ describe('built-in module rendering data', () => {
     expect(base).toMatchObject({
       kind: 'custom',
       label: 'Base',
+      behavior: 'location',
       ownerScoped: true,
-      size: { width: 560, height: 105 },
+      size: { width: 590, height: 70 },
       seatPositions: {
-        '1': { x: 430, y: 455 },
-        '2': { x: 570, y: 145 },
+        '1': { x: 500, y: 425 },
+        '2': { x: 500, y: 175 },
       },
     });
   });
 
-  it('gives the battlefield the dominant shared center area', () => {
+  it('gives combat the dominant shared center area with two objective slots', () => {
     const battlefield = frontierSkirmishModule.zones.find(zone => zone.id === 'field');
+    const objectiveA = frontierSkirmishModule.zones.find(zone => zone.id === 'objective-a');
+    const objectiveB = frontierSkirmishModule.zones.find(zone => zone.id === 'objective-b');
+
     expect(battlefield).toMatchObject({
-      label: 'Battlefield',
+      label: 'Combat Area',
+      role: 'combat-area',
       ownerScoped: false,
       defaultPosition: { x: 500, y: 300 },
-      size: { width: 720, height: 190 },
+      size: { width: 780, height: 160 },
     });
+    expect(objectiveA).toMatchObject({
+      behavior: 'slot',
+      role: 'objective',
+      capacity: 1,
+      defaultPosition: { x: 285, y: 300 },
+    });
+    expect(objectiveB).toMatchObject({
+      behavior: 'slot',
+      role: 'objective',
+      capacity: 1,
+      defaultPosition: { x: 715, y: 300 },
+    });
+  });
+
+  it('reserves mirrored hand and resource bands away from the center', () => {
+    const hand = frontierSkirmishModule.zones.find(zone => zone.id === 'hand');
+    const resources = frontierSkirmishModule.zones.find(zone => zone.id === 'resources');
+
+    expect(hand?.seatPositions?.['1']).toEqual({ x: 500, y: 555 });
+    expect(hand?.seatPositions?.['2']).toEqual({ x: 500, y: 45 });
+    expect(resources?.seatPositions?.['1']).toEqual({ x: 500, y: 485 });
+    expect(resources?.seatPositions?.['2']).toEqual({ x: 500, y: 115 });
   });
 });

@@ -279,10 +279,15 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
     if (mode === 'hand') {
       const spread = Math.min(58, Math.max(27, 650 / Math.max(collection.length, 1)));
       const width = Math.min(680, collection.length * spread + 55);
-      const start = 50 - width / 2 / 10;
-      style.left = `calc(${start}% + ${index * spread}px)`;
-      const visualSeat = toViewerSeat(card.owner, viewer, '1v1');
-      style.top = visualSeat === 2 ? '4px' : 'calc(100% - 108px)';
+      const visualSeat = toViewerSeat(card.owner, viewer, '1v1') as 1 | 2;
+      const handZone = activeModule.zones.find(zone => zone.kind === 'hand');
+      const seatKey = visualSeat === 1 ? '1' : '2';
+      const handCenter = handZone?.seatPositions?.[seatKey] ?? {
+        x: 500,
+        y: visualSeat === 2 ? 30 : 570,
+      };
+      style.left = `calc(${handCenter.x / 10}% - ${width / 2}px + ${index * spread}px)`;
+      style.top = `calc(${handCenter.y / 6}% - 54px)`;
       style.transform = 'rotate(0deg)';
       style.zIndex = 20 + index;
     }
@@ -291,7 +296,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       const position = zonePosition('discard', card.owner as 1 | 2);
       style.left = `${position.x / 10}%`;
       style.top = `${position.y / 6}%`;
-      style.transform = `translate(${index * 2}px,${index * 2}px) rotate(${card.rotation}deg)`;
+      style.transform = `translate(calc(-50% + ${index * 2}px),calc(-50% + ${index * 2}px)) rotate(${card.rotation}deg)`;
       style.zIndex = 8 + index;
     }
 
@@ -418,6 +423,11 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
         style={{
           left: `${zonePosition('deck', player).x / 10}%`,
           top: `${zonePosition('deck', player).y / 6}%`,
+          ...(zoneFor('deck')?.size ? {
+            width: `${zoneFor('deck')!.size!.width / 10}%`,
+            height: `${zoneFor('deck')!.size!.height / 6}%`,
+          } : {}),
+          transform: 'translate(-50%,-50%)',
         }}
         onDraw={count => drawCards(player, count)}
         onShuffle={() => shuffleDeck(player)}
@@ -425,6 +435,11 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       <div className="discard-zone" style={{
         left: `${zonePosition('discard', player).x / 10}%`,
         top: `${zonePosition('discard', player).y / 6}%`,
+        ...(zoneFor('discard')?.size ? {
+          width: `${zoneFor('discard')!.size!.width / 10}%`,
+          height: `${zoneFor('discard')!.size!.height / 6}%`,
+        } : {}),
+        transform: 'translate(-50%,-50%)',
       }}><span>{zoneLabel('discard').toUpperCase()} · {discard.length}</span></div>
       {discard.slice(-6).map((card, index) => renderCard(card, index, discard, 'discard'))}
       {hand.map((card, index) => renderCard(card, index, hand, 'hand'))}
@@ -437,7 +452,12 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
           return <button
             key={card.id}
             className={`card custom-zone-card ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${card.faceUp ? '' : `back back-${cardBack.pattern}`}`}
-            style={{ left: `calc(${position.x / 10}% + ${styleOffset}px)`, top: `calc(${position.y / 6}% + ${styleOffset}px)`, zIndex: 30 + index }}
+            style={{
+              left: `calc(${position.x / 10}% + ${styleOffset}px)`,
+              top: `calc(${position.y / 6}% + ${styleOffset}px)`,
+              transform: `translate(-50%,-50%) rotate(${card.rotation}deg)`,
+              zIndex: 30 + index,
+            }}
             onMouseEnter={() => setHovered(card.id)}
             onMouseLeave={() => setHovered('')}
             onClick={() => { setSelected(card.id); setMultiSelected([]); setPinned(card.id); }}
@@ -567,7 +587,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
           if (event.currentTarget === event.target) setPinned('');
         }}
       >
-        {activeModule.zones.filter(zone => zone.kind !== 'hand' && zone.size).flatMap(zone => {
+        {activeModule.zones.filter(zone => zone.size).flatMap(zone => {
           const players: Array<1 | 2 | undefined> = zone.ownerScoped ? [1, 2] : [undefined];
           return players.flatMap(player => {
             const position = zoneAreaPosition(zone, player);
@@ -577,7 +597,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
               : table.cards.filter(card => card.zone === zone.id).length;
             return [<div
               key={`${zone.id}-${player ?? 'shared'}`}
-              className={`module-zone-area module-zone-${zone.kind}`}
+              className={`module-zone-area module-zone-${zone.kind} module-zone-behavior-${zone.behavior ?? 'legacy'} module-zone-role-${zone.role ?? 'none'}`}
               style={{
                 left: `${position.x / 10}%`,
                 top: `${position.y / 6}%`,
