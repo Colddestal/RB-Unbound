@@ -26,6 +26,7 @@ import {
   type TableAction,
   type TableState,
 } from '@rb-unbound/tabletop';
+import { approximatePayloadBytes, RateLimiter, type LimitRule } from './rate-limit.js';
 import {
   loadSnapshot,
   saveSnapshot,
@@ -51,6 +52,37 @@ type MatchRecord = {
 };
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
+const limiter = new RateLimiter();
+const violations = new Map<string, { count: number; windowStartedAt: number }>();
+
+const DEFAULT_LIMIT: LimitRule = { capacity: 20, refillPerSecond: 5 };
+const EVENT_LIMITS: Record<string, LimitRule> = {
+  'session:resume': { capacity: 5, refillPerSecond: 0.5 },
+  'room:create': { capacity: 3, refillPerSecond: 0.1 },
+  'room:join-seat': { capacity: 6, refillPerSecond: 0.3 },
+  'room:join-spectator': { capacity: 6, refillPerSecond: 0.3 },
+  'room:ready': { capacity: 8, refillPerSecond: 1 },
+  'room:settings': { capacity: 8, refillPerSecond: 0.5 },
+  'room:start': { capacity: 4, refillPerSecond: 0.2 },
+  'room:leave': { capacity: 3, refillPerSecond: 0.2 },
+  'chat:send': { capacity: 5, refillPerSecond: 0.5 },
+  'match:request-state': { capacity: 8, refillPerSecond: 1 },
+  'match:action': { capacity: 90, refillPerSecond: 30 },
+};
+
+const EVENT_MAX_BYTES: Record<string, number> = {
+  'session:resume': 256,
+  'room:create': 512,
+  'room:join-seat': 512,
+  'room:join-spectator': 512,
+  'room:ready': 128,
+  'room:settings': 2048,
+  'room:start': 128,
+  'room:leave': 64,
+  'chat:send': 1200,
+  'match:request-state': 64,
+  'match:action': 2048,
+};
 
 const httpServer = createServer((_req, res) => {
   res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -98,6 +130,24 @@ function safeName(value: unknown): string | null {
 
 function safeFormat(value: unknown): MatchFormat | undefined {
   return value === '1v1' || value === '2v2' || value === 'ffa4' ? value : undefined;
+}
+
+function rateIdentity(socket: Socket): string {
+  return currentSession(socket)?.memberId ?? `socket:${socket.id}`;
+}
+
+function recordViolation(socket: Socket, reason: string): void {
+  const key = rateIdentity(socket);
+  const now = Date.now();
+  const existing = violations.get(key);
+  const window = !existing || now - existing.windowStartedAt > 60_000
+    ? { count: 0, windowStartedAt: now }
+    : existing;
+  window.count += 1;
+  violations.set(key, window);
+
+  socket.emit('abuse:warning', { reason, violations: window.count });
+  if (window.count >= 12) socket.disconnect(true);
 }
 
 function currentSession(socket: Socket): Session | undefined {
@@ -326,6 +376,26 @@ async function restoreState(): Promise<void> {
 }
 
 io.on('connection', socket => {
+  socket.use((packet, next) => {
+    const [event, ...args] = packet;
+    const eventName = typeof event === 'string' ? event : 'unknown';
+    const rule = EVENT_LIMITS[eventName] ?? DEFAULT_LIMIT;
+    const maxBytes = EVENT_MAX_BYTES[eventName] ?? 4096;
+    const identity = rateIdentity(socket);
+
+    if (approximatePayloadBytes(args) > maxBytes) {
+      recordViolation(socket, 'payload-too-large');
+      return next(new Error('Payload too large.'));
+    }
+
+    if (!limiter.allow(`${identity}:${eventName}`, rule)) {
+      recordViolation(socket, 'rate-limited');
+      return next(new Error('Too many requests.'));
+    }
+
+    next();
+  });
+
   socket.emit('status', { message: 'Connected to RB Unbound development multiplayer server.' });
 
   socket.on('session:resume', (payload: { token?: unknown } = {}) => {
@@ -557,7 +627,15 @@ io.on('connection', socket => {
     scheduleSave();
   });
 
-  socket.on('disconnect', () => markDisconnected(socket));
+  socket.on('disconnect', () => {
+    const identity = rateIdentity(socket);
+    markDisconnected(socket);
+    limiter.clearPrefix(`socket:${socket.id}:`);
+    if (!identity.startsWith('socket:')) {
+      const violation = violations.get(identity);
+      if (violation && Date.now() - violation.windowStartedAt > 60_000) violations.delete(identity);
+    }
+  });
 });
 
 async function shutdown(signal: string): Promise<void> {

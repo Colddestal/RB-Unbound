@@ -71,3 +71,12 @@ The development multiplayer server now writes atomic snapshots to `.data/server-
 Reconnect credentials are not stored in plaintext. The browser keeps the opaque raw token while the server persists only its SHA-256 hash. After a restart, presenting the same raw token allows the server to hash it again and locate the restored session.
 
 Snapshots are written through a temporary file followed by an atomic rename, are excluded from Git, and are flushed on SIGINT/SIGTERM. This file-backed store is intentionally a development durability layer, not the planned production database. Production hosting will move durable state to a database and add backups, migrations, expiration policies and multi-instance coordination.
+
+
+## Rate limits and anti-abuse controls
+
+All inbound Socket.IO events now pass through server-side token-bucket rate limiting before their handlers run. Limits are tuned by event class: room creation/settings and chat are conservative, while live match actions use a much higher burst/refill allowance so normal drag movement remains responsive.
+
+The server also applies per-event serialized payload-size limits in addition to Socket.IO's global message-size cap. Repeated violations are tracked per stable member identity when available, and a client that repeatedly exceeds limits is disconnected.
+
+These controls are an initial abuse-resistance layer. Production still requires IP/proxy-aware connection limiting, authentication-backed identity, moderation tools, audit logging, metrics/alerting, and infrastructure-level protections.
