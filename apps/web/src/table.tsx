@@ -13,7 +13,7 @@ import {
   builtInModulePackages,
   createInitialTableForModule,
   createTableSaveFile,
-  frontierSkirmishModule,
+  defaultGameModule,
   pileCapabilities,
   zoneBehavior,
   isTableSaveFile,
@@ -38,8 +38,8 @@ function shuffled<T>(items: T[]): T[] {
 }
 
 export function Table({ bindings, modulePackages }: { bindings: KeyBindings; modulePackages: ModulePackage[] }) {
-  const defaultPackage = modulePackages.find(bundle => bundle.module.id === frontierSkirmishModule.id) ??
-    builtInModulePackages.find(bundle => bundle.module.id === frontierSkirmishModule.id) ??
+  const defaultPackage = modulePackages.find(bundle => bundle.module.id === defaultGameModule.id) ??
+    builtInModulePackages.find(bundle => bundle.module.id === defaultGameModule.id) ??
     builtInModulePackages[0];
   const [moduleKey, setModuleKey] = useState(modulePackageKey(defaultPackage.module));
   const activePackage = modulePackages.find(bundle => modulePackageKey(bundle.module) === moduleKey) ?? defaultPackage;
