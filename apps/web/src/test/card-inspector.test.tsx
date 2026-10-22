@@ -24,7 +24,7 @@ describe('CardInspector', () => {
     />);
 
     expect(screen.getAllByText('Test Scout').length).toBeGreaterThan(0);
-    expect(screen.getByText('Player 1')).toBeInTheDocument();
+    expect(screen.getAllByText('Player 1')).toHaveLength(2);
     expect(screen.getByText('field')).toBeInTheDocument();
     expect(screen.getByText('Face up')).toBeInTheDocument();
     expect(screen.getByText('90°')).toBeInTheDocument();
