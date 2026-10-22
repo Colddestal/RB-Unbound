@@ -129,3 +129,12 @@ button:focus-visible,select:focus-visible,input:focus-visible,.card:focus-visibl
 .module-zone-marker.interactive strong{font-size:11px;color:#d7e6ec}
 .module-zone-marker.interactive span{font-size:10px;color:#8fa4b8;letter-spacing:0;text-transform:none}
 .custom-zone-card{transform:translate(-50%,-50%)}
+
+.deck-tools{margin-top:12px}
+.deck-tools-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.deck-tools-heading h2{margin:4px 0 0}
+.catalog-results{display:grid;gap:6px;max-height:240px;overflow:auto;margin:10px 0;padding-right:4px}
+.catalog-row{display:grid;grid-template-columns:150px 1fr 130px;gap:10px;align-items:center;padding:8px 10px;border:1px solid #293d54;border-radius:8px;background:#0b1724;font-size:11px}
+.catalog-row span{color:#93a9bc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.catalog-row small{color:#687f94;text-align:right;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+@media(max-width:800px){.catalog-row{grid-template-columns:1fr}.catalog-row small{text-align:left}}
