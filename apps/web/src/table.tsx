@@ -6,8 +6,10 @@ import {
   applyAction,
   canManipulate,
   builtInModulePackages,
+  createTableSaveFile,
   genericDuelModule,
   initialTable,
+  isTableSaveFile,
   migrateTableState,
   modulePackageKey,
   type Card,
@@ -70,10 +72,11 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
   }), [table.cards]);
 
   const save = () => {
-    const url = URL.createObjectURL(new Blob([JSON.stringify(table, null, 2)], { type: 'application/json' }));
+    const saveFile = createTableSaveFile(table, activeModule);
+    const url = URL.createObjectURL(new Blob([JSON.stringify(saveFile, null, 2)], { type: 'application/json' }));
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = 'rb-unbound-table-v4.json';
+    anchor.download = `rb-unbound-${activeModule.id}-table.json`;
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -83,14 +86,25 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
     try {
       if (file.size > 250_000) throw Error('File too large');
       const parsed: unknown = JSON.parse(await file.text());
-      const migrated = migrateTableState(parsed);
-      if (!migrated) throw Error('Invalid table file');
-      setTable(migrated);
+      if (isTableSaveFile(parsed)) {
+        const required = modulePackages.find(bundle =>
+          bundle.module.id === parsed.moduleId && bundle.module.version === parsed.moduleVersion);
+        if (!required) {
+          setError(`This table requires ${parsed.moduleId} v${parsed.moduleVersion}, which is not installed.`);
+          return;
+        }
+        setModuleKey(modulePackageKey(required.module));
+        setTable(parsed.table);
+      } else {
+        const migrated = migrateTableState(parsed);
+        if (!migrated) throw Error('Invalid table file');
+        setTable(migrated);
+      }
       setSelected('');
       setStackTarget('');
       setError('');
     } catch {
-      setError('Could not load this table file. RB Unbound v3/v4 table files are supported.');
+      setError('Could not load this table file. Current saves and legacy v3/v4 table files are supported.');
     }
   };
 
