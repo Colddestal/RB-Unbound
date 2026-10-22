@@ -44,7 +44,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
   const [moduleKey, setModuleKey] = useState(modulePackageKey(defaultPackage.module));
   const activePackage = modulePackages.find(bundle => modulePackageKey(bundle.module) === moduleKey) ?? defaultPackage;
   const activeModule = activePackage.module;
-  const zoneFor = (kind: Card['zone']) => activeModule.zones.find(zone => zone.kind === kind);
+  const zoneFor = (kind: Card['zone']) => activeModule.zones.find(zone => zone.id === kind || zone.kind === kind);
   const zoneLabel = (kind: Card['zone']) => zoneFor(kind)?.label ?? kind;
   const cardBack = activeModule.cardBacks[0];
   const zonePosition = (kind: Card['zone'], player: 1 | 2) => {
@@ -159,7 +159,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
     const destination = capabilities?.drawToZoneId
       ? activeModule.zones.find(zone => zone.id === capabilities.drawToZoneId)
       : undefined;
-    const faceUp = destination?.visibility === 'public' || zoneBehavior(destination ?? activeModule.zones.find(zone => zone.kind === 'hand')! ) === 'hand';
+    const faceUp = destination ? (destination.visibility === 'public' || zoneBehavior(destination) === 'hand') : false;
 
     for (let index = 0; index < count; index += 1) {
       execute({
