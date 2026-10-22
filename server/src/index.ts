@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
 import { Server, type Socket } from 'socket.io';
 import {
@@ -120,6 +120,25 @@ function newSessionToken(): string {
 
 function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
+}
+
+function newInviteCode(): string {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({ length: 8 }, () => alphabet[randomInt(alphabet.length)]).join('');
+}
+
+function inviteHash(code: string): string {
+  return createHash('sha256').update(`rb-unbound-invite:${code}`).digest('hex');
+}
+
+function validInvite(room: RoomState, value: unknown): boolean {
+  if (room.settings.isPublic) return true;
+  if (!room.inviteCodeHash || typeof value !== 'string') return false;
+  const candidate = value.trim().toUpperCase();
+  if (candidate.length !== 8) return false;
+  const expected = Buffer.from(room.inviteCodeHash, 'hex');
+  const actual = Buffer.from(inviteHash(candidate), 'hex');
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
 function safeName(value: unknown): string | null {
@@ -434,7 +453,7 @@ io.on('connection', socket => {
     scheduleSave();
   });
 
-  socket.on('room:create', (payload: { displayName?: unknown; roomName?: unknown; format?: unknown } = {}) => {
+  socket.on('room:create', (payload: { displayName?: unknown; roomName?: unknown; format?: unknown; isPublic?: unknown } = {}) => {
     if (currentSession(socket)) return fail(socket, 'Leave your current room first.');
     const displayName = safeName(payload.displayName);
     if (!displayName) return fail(socket, 'Choose a display name between 1 and 32 characters.');
@@ -442,7 +461,13 @@ io.on('connection', socket => {
     const memberId = randomUUID();
     const format = safeFormat(payload.format) ?? '1v1';
     const roomName = typeof payload.roomName === 'string' ? payload.roomName.trim().slice(0, 60) : '';
-    const room = createRoom(code(), memberId, displayName, { format, ...(roomName ? { roomName } : {}) });
+    const isPublic = payload.isPublic === true;
+    let room = createRoom(code(), memberId, displayName, { format, isPublic, ...(roomName ? { roomName } : {}) });
+    if (!isPublic) {
+      const inviteCode = newInviteCode();
+      room = { ...room, inviteCodeHash: inviteHash(inviteCode) };
+      socket.emit('room:invite-code', { roomCode: room.code, inviteCode });
+    }
 
     rooms.set(room.code, room);
     establishSession(socket, room, displayName, memberId, 1, false);
@@ -451,7 +476,7 @@ io.on('connection', socket => {
     scheduleSave();
   });
 
-  socket.on('room:join-seat', (payload: { code?: unknown; displayName?: unknown; seat?: unknown } = {}) => {
+  socket.on('room:join-seat', (payload: { code?: unknown; displayName?: unknown; seat?: unknown; inviteCode?: unknown } = {}) => {
     if (currentSession(socket)) return fail(socket, 'Leave your current room first.');
     const roomCode = typeof payload.code === 'string' ? payload.code.trim().toUpperCase() : '';
     const displayName = safeName(payload.displayName);
@@ -460,6 +485,7 @@ io.on('connection', socket => {
 
     const room = rooms.get(roomCode);
     if (!room || room.status !== 'lobby') return fail(socket, 'Room not found or already started.');
+    if (!validInvite(room, payload.inviteCode)) return fail(socket, 'This private room requires a valid invite code.');
 
     const memberId = randomUUID();
     const updated = occupySeat(room, memberId, displayName, seat as SeatNumber);
@@ -471,7 +497,7 @@ io.on('connection', socket => {
     scheduleSave();
   });
 
-  socket.on('room:join-spectator', (payload: { code?: unknown; displayName?: unknown } = {}) => {
+  socket.on('room:join-spectator', (payload: { code?: unknown; displayName?: unknown; inviteCode?: unknown } = {}) => {
     if (currentSession(socket)) return fail(socket, 'Leave your current room first.');
     const roomCode = typeof payload.code === 'string' ? payload.code.trim().toUpperCase() : '';
     const displayName = safeName(payload.displayName);
@@ -479,6 +505,7 @@ io.on('connection', socket => {
 
     const room = rooms.get(roomCode);
     if (!room) return fail(socket, 'Room not found.');
+    if (!validInvite(room, payload.inviteCode)) return fail(socket, 'This private room requires a valid invite code.');
 
     const memberId = randomUUID();
     const updated = addSpectator(room, memberId, displayName);
@@ -521,8 +548,17 @@ io.on('connection', socket => {
       payload.turnTimerSeconds <= 3600
     )) safePatch.turnTimerSeconds = payload.turnTimerSeconds;
 
-    const updated = setRoomSettings(room, session.memberId, safePatch);
+    let updated = setRoomSettings(room, session.memberId, safePatch);
     if (updated === room) return fail(socket, 'Only the room owner can change unlocked lobby settings.');
+
+    if (safePatch.isPublic === true) {
+      updated = { ...updated, inviteCodeHash: undefined };
+    } else if (safePatch.isPublic === false && room.settings.isPublic) {
+      const inviteCode = newInviteCode();
+      updated = { ...updated, inviteCodeHash: inviteHash(inviteCode) };
+      socket.emit('room:invite-code', { roomCode: room.code, inviteCode });
+    }
+
     rooms.set(room.code, updated);
     emitRoom(updated);
     scheduleSave();
