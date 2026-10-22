@@ -1,5 +1,6 @@
-import { useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { CardInspector } from './card-inspector';
+import { actionForCode, displayKey, type KeyBindings } from './controls';
 import {
   applyAction,
   canManipulate,
@@ -19,10 +20,12 @@ function shuffled<T>(items: T[]): T[] {
   return copy;
 }
 
-export function Table() {
+export function Table({ bindings }: { bindings: KeyBindings }) {
   const [table, setTable] = useState<TableState>(() => structuredClone(initialTable));
   const [viewer, setViewer] = useState<PlayerId>(1);
   const [selected, setSelected] = useState<string>('');
+  const [multiSelected, setMultiSelected] = useState<string[]>([]);
+  const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
   const [hovered, setHovered] = useState<string>('');
   const [pinned, setPinned] = useState<string>('');
   const [stackTarget, setStackTarget] = useState<string>('');
@@ -32,6 +35,7 @@ export function Table() {
 
   const execute = (action: Parameters<typeof applyAction>[1]) => setTable(state => applyAction(state, action));
   const selectedCard = table.cards.find(card => card.id === selected);
+  const selectedCards = table.cards.filter(card => multiSelected.includes(card.id));
   const inspectorCard = table.cards.find(card => card.id === (hovered || pinned));
   const inspectorPinned = Boolean(pinned && !hovered);
   const ownFieldCards = table.cards.filter(card => card.owner === viewer && card.zone === 'field' && card.id !== selected);
@@ -73,11 +77,61 @@ export function Table() {
     execute({ type: 'shuffle', player, orderedIds: shuffled(ids) });
   };
 
-  const moveSelected = (zone: Card['zone']) => {
-    if (!selectedCard || selectedCard.owner !== viewer) return;
-    execute({ type: 'to-zone', id: selectedCard.id, zone, actor: viewer });
+  const targets = selectedCards.length ? selectedCards : (selectedCard ? [selectedCard] : []);
+
+  const moveTargets = (zone: Card['zone']) => {
+    for (const card of targets) {
+      if (card.owner === viewer) execute({ type: 'to-zone', id: card.id, zone, actor: viewer });
+    }
     if (zone !== 'field') setStackTarget('');
   };
+
+  const rotateTargets = () => {
+    for (const card of targets) if (card.owner === viewer) execute({ type: 'rotate', id: card.id, actor: viewer });
+  };
+
+  const flipTargets = () => {
+    for (const card of targets) if (card.owner === viewer) execute({ type: 'flip', id: card.id, actor: viewer });
+  };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.matches('input, textarea, select, [contenteditable="true"]')) return;
+
+      const action = actionForCode(bindings, event.code);
+
+      if (action === 'clear') {
+        setSelected('');
+        setMultiSelected([]);
+        setPinned('');
+        setStackTarget('');
+        event.preventDefault();
+        return;
+      }
+
+      if (!action || targets.length === 0) return;
+
+      if (action === 'rotate') rotateTargets();
+      else if (action === 'flip') flipTargets();
+      else if (action === 'discard') moveTargets('discard');
+      else if (action === 'moveHand') moveTargets('hand');
+      else if (action === 'playField') moveTargets('field');
+      else if (targets.every(card => card.zone === 'field') && ['moveUp', 'moveDown', 'moveLeft', 'moveRight'].includes(action)) {
+        const step = event.shiftKey ? 50 : 15;
+        const dx = action === 'moveLeft' ? -step : action === 'moveRight' ? step : 0;
+        const dy = action === 'moveUp' ? -step : action === 'moveDown' ? step : 0;
+        for (const card of targets) {
+          if (card.owner === viewer) execute({ type: 'move', id: card.id, actor: viewer, x: card.x + dx, y: card.y + dy });
+        }
+      } else return;
+
+      event.preventDefault();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedCard, selectedCards, viewer, bindings]);
 
   const renderCard = (card: Card, index: number, collection: Card[], mode: 'hand' | 'field' | 'discard') => {
     const owned = canManipulate(card, viewer);
@@ -114,12 +168,20 @@ export function Table() {
       key={card.id}
       aria-label={`${faceVisible ? card.label : 'Hidden card'}, Player ${card.owner}`}
       aria-pressed={selected === card.id}
-      className={`card ${selected === card.id ? 'selected' : ''} ${faceVisible ? '' : 'back'} ${owned ? '' : 'locked'}`}
+      className={`card ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${faceVisible ? '' : 'back'} ${owned ? '' : 'locked'}`}
       style={style}
       onMouseEnter={() => setHovered(card.id)}
       onMouseLeave={() => setHovered('')}
-      onClick={() => {
-        if (owned || mode === 'field') setSelected(card.id);
+      onClick={event => {
+        if (owned || mode === 'field') {
+          if (event.shiftKey && owned) {
+            setMultiSelected(current => current.includes(card.id) ? current.filter(id => id !== card.id) : [...current, card.id]);
+            setSelected('');
+          } else {
+            setSelected(card.id);
+            setMultiSelected([]);
+          }
+        }
         setPinned(card.id);
       }}
       onDoubleClick={() => { if (owned && mode === 'hand') execute({ type: 'to-zone', id: card.id, zone: 'field', actor: viewer }); }}
@@ -182,22 +244,35 @@ export function Table() {
       <button className={viewer === 1 ? 'active' : ''} onClick={() => { setViewer(1); setSelected(''); }}>Player 1</button>
       <button className={viewer === 2 ? 'active' : ''} onClick={() => { setViewer(2); setSelected(''); }}>Player 2</button>
       <span className="chip">Opponent hand stays hidden</span>
+      <span className="chip">PC controls enabled</span>
     </section>
 
     <section className="toolbar">
-      <strong>{selectedCard ? `Selected: ${selectedCard.owner === viewer ? selectedCard.label : 'Opponent card'}` : 'Select one of your cards'}</strong>
-      <button disabled={!selectedCard || selectedCard.owner !== viewer} onClick={() => selectedCard && execute({ type: 'rotate', id: selectedCard.id, actor: viewer })}>Rotate</button>
-      <button disabled={!selectedCard || selectedCard.owner !== viewer} onClick={() => selectedCard && execute({ type: 'flip', id: selectedCard.id, actor: viewer })}>Flip</button>
-      <button disabled={!selectedCard || selectedCard.owner !== viewer} onClick={() => moveSelected('hand')}>To hand</button>
-      <button disabled={!selectedCard || selectedCard.owner !== viewer} onClick={() => moveSelected('field')}>To field</button>
-      <button disabled={!selectedCard || selectedCard.owner !== viewer} onClick={() => moveSelected('discard')}>Discard</button>
-      <button disabled={!selectedCard || selectedCard.owner !== viewer} onClick={() => moveSelected('deck')}>To deck</button>
+      <strong>{selectedCards.length ? `${selectedCards.length} cards selected` : selectedCard ? `Selected: ${selectedCard.owner === viewer ? selectedCard.label : 'Opponent card'}` : 'Select one of your cards'}</strong>
+      <button disabled={!targets.length} onClick={rotateTargets}>Rotate</button>
+      <button disabled={!targets.length} onClick={flipTargets}>Flip</button>
+      <button disabled={!targets.length} onClick={() => moveTargets('hand')}>To hand</button>
+      <button disabled={!targets.length} onClick={() => moveTargets('field')}>To field</button>
+      <button disabled={!targets.length} onClick={() => moveTargets('discard')}>Discard</button>
+      <button disabled={!targets.length} onClick={() => moveTargets('deck')}>To deck</button>
       <select value={stackTarget} onChange={e => setStackTarget(e.target.value)} disabled={!selectedCard || selectedCard.zone !== 'field'}>
         <option value="">Stack target…</option>
         {ownFieldCards.map(card => <option key={card.id} value={card.id}>{card.label}</option>)}
       </select>
       <button disabled={!selectedCard || !stackTarget || selectedCard.zone !== 'field'} onClick={() => selectedCard && execute({ type: 'stack', id: selectedCard.id, targetId: stackTarget, actor: viewer })}>Stack</button>
       <button disabled={!selectedCard?.stackOn} onClick={() => selectedCard && execute({ type: 'unstack', id: selectedCard.id, actor: viewer })}>Unstack</button>
+    </section>
+
+    <section className="shortcut-bar" aria-label="Keyboard shortcuts">
+      <strong>Keyboard</strong>
+      <kbd>R</kbd><span>Rotate</span>
+      <kbd>F</kbd><span>Flip</span>
+      <kbd>P</kbd><span>Play / field</span>
+      <kbd>H</kbd><span>Hand</span>
+      <kbd>Del</kbd><span>Discard</span>
+      <kbd>{displayKey(bindings.moveUp)}{displayKey(bindings.moveLeft)}{displayKey(bindings.moveDown)}{displayKey(bindings.moveRight)}</kbd><span>Nudge</span>
+      <kbd>Shift + movement</kbd><span>Large nudge</span>
+      <kbd>Esc</kbd><span>Clear</span>
     </section>
 
     <section className="filebar">
@@ -212,10 +287,55 @@ export function Table() {
 
     <div className="play-area">
       <CardInspector card={inspectorCard} pinned={inspectorPinned} onClear={() => setPinned('')} />
-      <div className="board" ref={boardRef} aria-label="RB Unbound tabletop board" onClick={event => {
-        if (event.currentTarget === event.target) setPinned('');
-      }}>
+      <div
+        className="board"
+        ref={boardRef}
+        aria-label="RB Unbound tabletop board"
+        onPointerDown={event => {
+          if (event.button !== 0 || event.currentTarget !== event.target) return;
+          const rect = event.currentTarget.getBoundingClientRect();
+          const x = event.clientX - rect.left;
+          const y = event.clientY - rect.top;
+          setSelectionBox({ startX: x, startY: y, endX: x, endY: y });
+          setSelected('');
+          setMultiSelected([]);
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={event => {
+          if (!selectionBox || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+          const rect = event.currentTarget.getBoundingClientRect();
+          setSelectionBox(box => box ? { ...box, endX: event.clientX - rect.left, endY: event.clientY - rect.top } : null);
+        }}
+        onPointerUp={event => {
+          if (!selectionBox) return;
+          const rect = event.currentTarget.getBoundingClientRect();
+          const left = Math.min(selectionBox.startX, selectionBox.endX);
+          const right = Math.max(selectionBox.startX, selectionBox.endX);
+          const top = Math.min(selectionBox.startY, selectionBox.endY);
+          const bottom = Math.max(selectionBox.startY, selectionBox.endY);
+          const ids = table.cards
+            .filter(card => card.owner === viewer && card.zone === 'field')
+            .filter(card => {
+              const cx = (card.x / 1000) * rect.width + 43;
+              const cy = (card.y / 600) * rect.height + 58;
+              return cx >= left && cx <= right && cy >= top && cy <= bottom;
+            })
+            .map(card => card.id);
+          setMultiSelected(ids);
+          setSelectionBox(null);
+          event.currentTarget.releasePointerCapture(event.pointerId);
+        }}
+        onClick={event => {
+          if (event.currentTarget === event.target) setPinned('');
+        }}
+      >
         <div className="midline"><span>SHARED FIELD</span></div>
+        {selectionBox && <div className="selection-box" style={{
+          left: Math.min(selectionBox.startX, selectionBox.endX),
+          top: Math.min(selectionBox.startY, selectionBox.endY),
+          width: Math.abs(selectionBox.endX - selectionBox.startX),
+          height: Math.abs(selectionBox.endY - selectionBox.startY),
+        }} />}
         {renderPlayer(2)}
         {renderPlayer(1)}
       </div>
