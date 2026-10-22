@@ -1,3 +1,6 @@
+import { builtInCardCatalog, starterDeckForModule } from './deck.js';
+import type { GameModule } from './game-module.js';
+
 export type PlayerId = 1 | 2 | 3 | 4;
 export type CoreCardZone = 'deck' | 'hand' | 'field' | 'discard';
 export type CardZone = string;
@@ -80,6 +83,34 @@ export function createInitialTable(players: PlayerId[]): TableState {
   return {
     version: 4,
     cards: unique.flatMap(player => buildDeck(player, `p${player}`)),
+  };
+}
+
+export function createInitialTableForModule(players: PlayerId[], module: GameModule): TableState {
+  const unique = [...new Set(players)].filter((player): player is PlayerId => player >= 1 && player <= 4);
+  const deck = starterDeckForModule(module);
+  const catalog = new Map(builtInCardCatalog
+    .filter(card => card.moduleId === module.id && card.moduleVersion === module.version)
+    .map(card => [card.id, card]));
+
+  return {
+    version: 4,
+    cards: unique.flatMap(owner => deck.cards.flatMap((definitionId, index) => {
+      const definition = catalog.get(definitionId);
+      if (!definition) return [];
+      return [{
+        id: `p${owner}-${definitionId}-${index + 1}`,
+        definitionId,
+        label: definition.name,
+        owner,
+        zone: 'deck',
+        order: index,
+        x: 0,
+        y: 0,
+        rotation: owner === 2 ? 180 : owner === 3 ? 90 : owner === 4 ? 270 : 0,
+        faceUp: false,
+      } satisfies Card];
+    })),
   };
 }
 
