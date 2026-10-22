@@ -214,3 +214,5 @@ export function isTableState(value: unknown): value is TableState {
     Number.isFinite(c.rotation) && typeof c.faceUp === 'boolean' &&
     (c.stackOn === undefined || (typeof c.stackOn === 'string' && c.stackOn.length <= 100)));
 }
+
+export * from './game-module';
