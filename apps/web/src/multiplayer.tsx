@@ -47,7 +47,10 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
   const [displayName, setDisplayName] = useState('Player');
   const [roomName, setRoomName] = useState('Project Poor Table');
   const [format, setFormat] = useState<MatchFormat>('1v1');
+  const [createPublic, setCreatePublic] = useState(false);
   const [joinCode, setJoinCode] = useState('');
+  const [joinInviteCode, setJoinInviteCode] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
   const [joinSeat, setJoinSeat] = useState<1 | 2 | 3 | 4>(2);
   const [chatText, setChatText] = useState('');
   const [selected, setSelected] = useState('');
@@ -80,8 +83,11 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
       window.sessionStorage.setItem('rb-unbound-session', payload.token);
       actionSequenceRef.current = 0;
     });
-    client.on('session:resumed', (payload: { lastActionSequence?: number }) => {
+    client.on('session:resumed', (payload: { lastActionSequence?: number; roomCode?: string }) => {
       actionSequenceRef.current = Number.isSafeInteger(payload.lastActionSequence) ? Number(payload.lastActionSequence) : 0;
+      if (payload.roomCode) {
+        setInviteCode(window.localStorage.getItem(`rb-unbound-room-invite-${payload.roomCode}`) ?? '');
+      }
     });
     client.on('session:invalid', () => {
       window.sessionStorage.removeItem('rb-unbound-session');
@@ -97,6 +103,11 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
       actionSequenceRef.current = 0;
     });
     client.on('room:identity', (payload: Identity) => setIdentity(payload));
+    client.on('room:invite-code', (payload: { roomCode?: string; inviteCode?: string }) => {
+      if (!payload.roomCode || !payload.inviteCode) return;
+      setInviteCode(payload.inviteCode);
+      window.localStorage.setItem(`rb-unbound-room-invite-${payload.roomCode}`, payload.inviteCode);
+    });
     client.on('room:update', (payload: RoomSnapshot) => setRoom(payload));
     client.on('room:started', () => client.emit('match:request-state'));
     client.on('match:update', (payload: MatchSnapshot) => {
@@ -168,14 +179,15 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
 
   const create = () => {
     setError('');
-    socket?.emit('room:create', { displayName, roomName, format });
+    socket?.emit('room:create', { displayName, roomName, format, isPublic: createPublic });
   };
 
   const join = (spectator = false) => {
     setError('');
     const code = joinCode.trim().toUpperCase();
-    if (spectator) socket?.emit('room:join-spectator', { code, displayName });
-    else socket?.emit('room:join-seat', { code, displayName, seat: joinSeat });
+    const invite = joinInviteCode.trim().toUpperCase();
+    if (spectator) socket?.emit('room:join-spectator', { code, displayName, inviteCode: invite || undefined });
+    else socket?.emit('room:join-seat', { code, displayName, seat: joinSeat, inviteCode: invite || undefined });
   };
 
   const sendChat = () => {
@@ -250,6 +262,8 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
           <label>Format<select value={format} onChange={e => setFormat(e.target.value as MatchFormat)}>
             <option value="1v1">1v1</option><option value="2v2">2v2</option><option value="ffa4">1v1v1v1</option>
           </select></label>
+          <label className="inline-check"><input type="checkbox" checked={createPublic} onChange={e => setCreatePublic(e.target.checked)} /> Public room</label>
+          <p className="muted">{createPublic ? 'Public rooms only require the room code.' : 'Private rooms require both the room code and a separate invite code.'}</p>
           <button className="primary" disabled={!connected} onClick={create}>Create room</button>
         </section>
 
@@ -257,6 +271,7 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
           <h2>Join a room</h2>
           <label>Display name<input value={displayName} maxLength={32} onChange={e => setDisplayName(e.target.value)} /></label>
           <label>Room code<input value={joinCode} maxLength={6} onChange={e => setJoinCode(e.target.value.toUpperCase())} /></label>
+          <label>Invite code <span className="muted">(private rooms only)</span><input value={joinInviteCode} maxLength={8} onChange={e => setJoinInviteCode(e.target.value.toUpperCase())} /></label>
           <label>Seat<select value={joinSeat} onChange={e => setJoinSeat(Number(e.target.value) as 1 | 2 | 3 | 4)}>
             <option value={1}>Seat 1</option><option value={2}>Seat 2</option><option value={3}>Seat 3</option><option value={4}>Seat 4</option>
           </select></label>
@@ -275,7 +290,7 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
 
   return <div className="app multiplayer-shell">
     <header>
-      <div><span className="eyebrow">ROOM {room.code}</span><h1>{room.settings.roomName}</h1><p>{room.settings.format.toUpperCase()} · {room.settings.ruleset} · {room.status}</p></div>
+      <div><span className="eyebrow">ROOM {room.code}</span><h1>{room.settings.roomName}</h1><p>{room.settings.format.toUpperCase()} · {room.settings.ruleset} · {room.settings.isPublic ? 'public' : 'private'} · {room.status}</p></div>
       <span className={`connection-pill ${connected ? 'online' : ''}`}>{connected ? 'Connected' : 'Reconnecting…'}</span>
     </header>
 
@@ -293,12 +308,18 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
 
       <section className="panel">
         <h2>Room settings</h2>
+        {!room.settings.isPublic && inviteCode && isOwner && <div className="invite-code-box">
+          <span className="muted">Private invite code</span>
+          <strong>{inviteCode}</strong>
+          <small>Share this together with room code {room.code}.</small>
+        </div>}
         <label>Format<select disabled={!isOwner} value={room.settings.format} onChange={e => socket?.emit('room:settings', { format: e.target.value })}>
           <option value="1v1">1v1</option><option value="2v2">2v2</option><option value="ffa4">1v1v1v1</option>
         </select></label>
         <label>Ruleset<select disabled={!isOwner} value={room.settings.ruleset} onChange={e => socket?.emit('room:settings', { ruleset: e.target.value })}>
           <option value="standard">Standard</option><option value="unrestricted">Unrestricted</option><option value="custom">Custom</option>
         </select></label>
+        <label className="inline-check"><input disabled={!isOwner} type="checkbox" checked={room.settings.isPublic} onChange={e => socket?.emit('room:settings', { isPublic: e.target.checked })}/> Public room</label>
         <label className="inline-check"><input disabled={!isOwner} type="checkbox" checked={room.settings.allowSpectators} onChange={e => socket?.emit('room:settings', { allowSpectators: e.target.checked })}/> Allow spectators</label>
         <label className="inline-check"><input disabled={!isOwner} type="checkbox" checked={room.settings.readyCheck} onChange={e => socket?.emit('room:settings', { readyCheck: e.target.checked })}/> Require ready check</label>
         {isOwner && <div className="button-row"><button className="primary" onClick={() => socket?.emit('room:start', { force: false })}>Start</button><button onClick={() => socket?.emit('room:start', { force: true })}>Force start</button></div>}
