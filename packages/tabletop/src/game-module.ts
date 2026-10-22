@@ -254,7 +254,7 @@ export const frontierSkirmishModule: GameModule = {
         '1': { x: 900, y: 425 },
         '2': { x: 100, y: 175 },
       },
-      size: { width: 90, height: 110 },
+      size: { width: 70, height: 88 },
     },
     {
       id: 'hand',
@@ -265,10 +265,10 @@ export const frontierSkirmishModule: GameModule = {
       behavior: 'hand',
       role: 'hand',
       seatPositions: {
-        '1': { x: 500, y: 555 },
-        '2': { x: 500, y: 45 },
+        '1': { x: 500, y: 560 },
+        '2': { x: 500, y: 40 },
       },
-      size: { width: 620, height: 76 },
+      size: { width: 620, height: 72 },
     },
     {
       id: 'field',
@@ -280,7 +280,7 @@ export const frontierSkirmishModule: GameModule = {
       role: 'combat-area',
       stackable: true,
       defaultPosition: { x: 500, y: 300 },
-      size: { width: 780, height: 160 },
+      size: { width: 780, height: 138 },
     },
     {
       id: 'base',
@@ -291,10 +291,10 @@ export const frontierSkirmishModule: GameModule = {
       behavior: 'location',
       role: 'base',
       seatPositions: {
-        '1': { x: 500, y: 425 },
-        '2': { x: 500, y: 175 },
+        '1': { x: 500, y: 410 },
+        '2': { x: 500, y: 190 },
       },
-      size: { width: 590, height: 70 },
+      size: { width: 600, height: 80 },
     },
     {
       id: 'resources',
@@ -308,7 +308,7 @@ export const frontierSkirmishModule: GameModule = {
         '1': { x: 500, y: 485 },
         '2': { x: 500, y: 115 },
       },
-      size: { width: 540, height: 44 },
+      size: { width: 540, height: 70 },
     },
     {
       id: 'commander',
@@ -323,7 +323,7 @@ export const frontierSkirmishModule: GameModule = {
         '1': { x: 75, y: 425 },
         '2': { x: 925, y: 175 },
       },
-      size: { width: 72, height: 94 },
+      size: { width: 62, height: 82 },
     },
     {
       id: 'vanguard',
@@ -338,7 +338,7 @@ export const frontierSkirmishModule: GameModule = {
         '1': { x: 175, y: 425 },
         '2': { x: 825, y: 175 },
       },
-      size: { width: 72, height: 94 },
+      size: { width: 62, height: 82 },
     },
     {
       id: 'resource-deck',
@@ -350,10 +350,10 @@ export const frontierSkirmishModule: GameModule = {
       role: 'resource-deck',
       pile: { drawToZoneId: 'resources', shuffle: true },
       seatPositions: {
-        '1': { x: 85, y: 500 },
-        '2': { x: 915, y: 100 },
+        '1': { x: 85, y: 530 },
+        '2': { x: 915, y: 70 },
       },
-      size: { width: 82, height: 84 },
+      size: { width: 70, height: 82 },
     },
     {
       id: 'discard',
@@ -364,10 +364,10 @@ export const frontierSkirmishModule: GameModule = {
       behavior: 'pile',
       role: 'discard',
       seatPositions: {
-        '1': { x: 915, y: 500 },
-        '2': { x: 85, y: 100 },
+        '1': { x: 915, y: 530 },
+        '2': { x: 85, y: 70 },
       },
-      size: { width: 82, height: 84 },
+      size: { width: 70, height: 82 },
     },
     {
       id: 'objective-a',
@@ -380,10 +380,10 @@ export const frontierSkirmishModule: GameModule = {
       capacity: 1,
       defaultPosition: { x: 285, y: 300 },
       displayCopies: [
-        { x: 285, y: 245 },
-        { x: 285, y: 355 },
+        { x: 285, y: 258 },
+        { x: 285, y: 342 },
       ],
-      size: { width: 96, height: 68 },
+      size: { width: 78, height: 54 },
     },
     {
       id: 'objective-b',
@@ -396,10 +396,10 @@ export const frontierSkirmishModule: GameModule = {
       capacity: 1,
       defaultPosition: { x: 715, y: 300 },
       displayCopies: [
-        { x: 715, y: 245 },
-        { x: 715, y: 355 },
+        { x: 715, y: 258 },
+        { x: 715, y: 342 },
       ],
-      size: { width: 96, height: 68 },
+      size: { width: 78, height: 54 },
     },
     {
       id: 'objective-a-hidden',
