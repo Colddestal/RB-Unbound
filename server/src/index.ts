@@ -15,6 +15,7 @@ import {
   type MatchFormat,
   type RoomSettings,
   type RoomState,
+  type SeriesBestOf,
   type SeatNumber,
 } from '@rb-unbound/lobby';
 import {
@@ -33,6 +34,8 @@ import {
   type PlayerId,
   type TableAction,
   type TableState,
+  pileCapabilities,
+  zoneBehavior,
 } from '@rb-unbound/tabletop';
 import { approximatePayloadBytes, RateLimiter, type LimitRule } from './rate-limit.js';
 import {
@@ -162,6 +165,10 @@ function safeFormat(value: unknown): MatchFormat | undefined {
   return value === '1v1' || value === '2v2' || value === 'ffa4' ? value : undefined;
 }
 
+function safeBestOf(value: unknown): SeriesBestOf | undefined {
+  return value === 1 || value === 3 ? value : undefined;
+}
+
 function findPackage(moduleId: unknown, moduleVersion?: unknown): ModulePackage | undefined {
   if (typeof moduleId !== 'string') return undefined;
   for (const bundle of modulePackages.values()) {
@@ -284,6 +291,7 @@ function publicRoom(room: RoomState) {
     })),
     chat: room.chat.map(({ memberId: _memberId, ...message }) => message),
     history: room.history,
+    series: room.series,
   };
 }
 
@@ -329,6 +337,12 @@ function moduleZonePolicy(room: RoomState) {
     allowedZones: module.zones.map(zone => zone.id),
     stackableZones: module.zones.filter(zone => zone.stackable).map(zone => zone.id),
     publicZones: module.zones.filter(zone => zone.visibility === 'public').map(zone => zone.id),
+    pileZones: module.zones.filter(zone => zoneBehavior(zone) === 'pile').map(zone => zone.id),
+    drawDestinations: new Map(module.zones.flatMap(zone => {
+      const capabilities = pileCapabilities(module, zone);
+      return capabilities.drawToZoneId ? [[zone.id, capabilities.drawToZoneId] as const] : [];
+    })),
+    shuffleZones: module.zones.filter(zone => pileCapabilities(module, zone).shuffle).map(zone => zone.id),
   };
 }
 
@@ -435,14 +449,27 @@ function emitMatchViews(room: RoomState): void {
   }
 }
 
-function toServerAction(table: TableState, seat: PlayerId, action: ClientTableAction): TableAction | null {
-  if (action.type === 'draw') return { type: 'draw', player: seat };
+function toServerAction(
+  table: TableState,
+  seat: PlayerId,
+  action: ClientTableAction,
+  drawDestinations: ReadonlyMap<string, string>,
+  shuffleZones: readonly string[],
+): TableAction | null {
+  if (action.type === 'draw') {
+    const fromZone = action.fromZone ?? 'deck';
+    const toZone = drawDestinations.get(fromZone);
+    if (!toZone) return null;
+    return { type: 'draw', player: seat, fromZone, toZone };
+  }
   if (action.type === 'shuffle') {
+    const zone = action.zone ?? 'deck';
+    if (!shuffleZones.includes(zone)) return null;
     const ids = table.cards
-      .filter(card => card.owner === seat && card.zone === 'deck')
+      .filter(card => card.owner === seat && card.zone === zone)
       .sort((a, b) => a.order - b.order)
       .map(card => card.id);
-    return { type: 'shuffle', player: seat, orderedIds: shuffleIds(ids) };
+    return { type: 'shuffle', player: seat, zone, orderedIds: shuffleIds(ids) };
   }
   if (action.type === 'move') return { ...action, actor: seat };
   if (action.type === 'rotate') return { ...action, actor: seat };
@@ -526,6 +553,7 @@ async function restoreState(): Promise<void> {
       history: Array.isArray(savedRoom.history) ? savedRoom.history : [],
       settings: {
         ...savedRoom.settings,
+        bestOf: savedRoom.settings.bestOf === 3 ? 3 : 1,
         moduleId: restoredModule.id,
         moduleVersion: restoredModule.version,
       },
@@ -615,13 +643,14 @@ io.on('connection', socket => {
     scheduleSave();
   });
 
-  socket.on('room:create', (payload: { displayName?: unknown; roomName?: unknown; format?: unknown; isPublic?: unknown; moduleId?: unknown; moduleVersion?: unknown; modulePackage?: unknown } = {}) => {
+  socket.on('room:create', (payload: { displayName?: unknown; roomName?: unknown; format?: unknown; bestOf?: unknown; isPublic?: unknown; moduleId?: unknown; moduleVersion?: unknown; modulePackage?: unknown } = {}) => {
     if (currentSession(socket)) return fail(socket, 'Leave your current room first.');
     const displayName = safeName(payload.displayName);
     if (!displayName) return fail(socket, 'Choose a display name between 1 and 32 characters.');
 
     const memberId = randomUUID();
     const format = safeFormat(payload.format) ?? '1v1';
+    const bestOf = safeBestOf(payload.bestOf) ?? 1;
     const suppliedPackage = payload.modulePackage === undefined ? undefined : registerPackage(payload.modulePackage);
     if (payload.modulePackage !== undefined && !suppliedPackage) return fail(socket, 'Invalid or unsupported module package.');
     const requestedPackage = suppliedPackage ??
@@ -633,6 +662,7 @@ io.on('connection', socket => {
     const isPublic = payload.isPublic === true;
     let room = createRoom(code(), memberId, displayName, {
       format,
+      bestOf,
       moduleId: selectedModule.id,
       moduleVersion: selectedModule.version,
       isPublic,
@@ -729,6 +759,8 @@ io.on('connection', socket => {
     if (typeof payload.allowSpectators === 'boolean') safePatch.allowSpectators = payload.allowSpectators;
     if (typeof payload.readyCheck === 'boolean') safePatch.readyCheck = payload.readyCheck;
     if (typeof payload.shareTeamHands === 'boolean') safePatch.shareTeamHands = payload.shareTeamHands;
+    const requestedBestOf = safeBestOf(payload.bestOf);
+    if (requestedBestOf) safePatch.bestOf = requestedBestOf;
     if (payload.turnTimerSeconds === null || (
       typeof payload.turnTimerSeconds === 'number' &&
       Number.isInteger(payload.turnTimerSeconds) &&
@@ -767,7 +799,7 @@ io.on('connection', socket => {
 
     const started = appendHistory(updated, {
       id: randomUUID(),
-      text: `Match started · ${moduleForRoom(updated).name} · ${updated.settings.format.toUpperCase()}.`,
+      text: `Match started · ${moduleForRoom(updated).name} · ${updated.settings.format.toUpperCase()} · BO${updated.settings.bestOf}.`,
       createdAt: new Date().toISOString(),
       kind: 'system',
     });
@@ -803,10 +835,9 @@ io.on('connection', socket => {
       return;
     }
 
-    const action = toServerAction(match.table, session.seat, payload.action);
-    if (!action) return fail(socket, 'Unsupported match action.');
-
     const policy = moduleZonePolicy(room);
+    const action = toServerAction(match.table, session.seat, payload.action, policy.drawDestinations, policy.shuffleZones);
+    if (!action) return fail(socket, 'Unsupported match action.');
     const before = match.table;
     const updated = applyAction(before, action, policy.allowedZones, policy.stackableZones);
     if (updated === before) {

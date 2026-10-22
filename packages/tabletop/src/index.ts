@@ -29,9 +29,9 @@ export type TableAction =
   | { type: 'move'; id: string; x: number; y: number; actor: PlayerId }
   | { type: 'rotate'; id: string; actor: PlayerId }
   | { type: 'flip'; id: string; actor: PlayerId }
-  | { type: 'draw'; player: PlayerId }
+  | { type: 'draw'; player: PlayerId; fromZone?: CardZone; toZone?: CardZone }
   | { type: 'to-zone'; id: string; zone: CardZone; actor: PlayerId }
-  | { type: 'shuffle'; player: PlayerId; orderedIds: string[] }
+  | { type: 'shuffle'; player: PlayerId; zone?: CardZone; orderedIds: string[] }
   | { type: 'stack'; id: string; targetId: string; actor: PlayerId }
   | { type: 'unstack'; id: string; actor: PlayerId }
   | { type: 'reset'; players?: PlayerId[] };
@@ -40,9 +40,9 @@ export type ClientTableAction =
   | { type: 'move'; id: string; x: number; y: number }
   | { type: 'rotate'; id: string }
   | { type: 'flip'; id: string }
-  | { type: 'draw' }
+  | { type: 'draw'; fromZone?: CardZone }
   | { type: 'to-zone'; id: string; zone: CardZone }
-  | { type: 'shuffle' }
+  | { type: 'shuffle'; zone?: CardZone }
   | { type: 'stack'; id: string; targetId: string }
   | { type: 'unstack'; id: string };
 
@@ -140,24 +140,29 @@ export function applyAction(
   if (action.type === 'reset') return createInitialTable(action.players ?? [1, 2]);
 
   if (action.type === 'draw') {
-    const deck = state.cards
-      .filter(c => c.owner === action.player && c.zone === 'deck')
+    const fromZone = action.fromZone ?? 'deck';
+    const toZone = action.toZone ?? 'hand';
+    if (!zoneSet.has(fromZone) || !zoneSet.has(toZone)) return state;
+    const pile = state.cards
+      .filter(c => c.owner === action.player && c.zone === fromZone)
       .sort((a, b) => a.order - b.order);
-    const top = deck[0];
+    const top = pile[0];
     if (!top) return state;
     return {
       ...state,
       cards: state.cards.map(card => card.id === top.id
-        ? { ...card, zone: 'hand', order: nextOrder(state.cards, action.player, 'hand'), faceUp: true, stackOn: undefined }
+        ? { ...card, zone: toZone, order: nextOrder(state.cards, action.player, toZone), faceUp: toZone === 'hand', stackOn: undefined }
         : card),
     };
   }
 
   if (action.type === 'shuffle') {
-    const deckIds = new Set(state.cards.filter(c => c.owner === action.player && c.zone === 'deck').map(c => c.id));
-    if (action.orderedIds.length !== deckIds.size || action.orderedIds.some(id => !deckIds.has(id))) return state;
+    const zone = action.zone ?? 'deck';
+    if (!zoneSet.has(zone)) return state;
+    const pileIds = new Set(state.cards.filter(c => c.owner === action.player && c.zone === zone).map(c => c.id));
+    if (action.orderedIds.length !== pileIds.size || action.orderedIds.some(id => !pileIds.has(id))) return state;
     const order = new Map(action.orderedIds.map((id, index) => [id, index]));
-    return { ...state, cards: state.cards.map(card => deckIds.has(card.id) ? { ...card, order: order.get(card.id)! } : card) };
+    return { ...state, cards: state.cards.map(card => pileIds.has(card.id) ? { ...card, order: order.get(card.id)! } : card) };
   }
 
   const card = state.cards.find(c => c.id === action.id);
@@ -254,7 +259,13 @@ export function projectTable(
 export function isClientTableAction(value: unknown): value is ClientTableAction {
   if (!value || typeof value !== 'object') return false;
   const action = value as Record<string, unknown>;
-  if (action.type === 'draw' || action.type === 'shuffle') return true;
+  if (action.type === 'draw') {
+    const fromZone = action.fromZone;
+    return fromZone === undefined || (typeof fromZone === 'string' && ZONE_ID_PATTERN.test(fromZone));
+  }
+  if (action.type === 'shuffle') {
+    return action.zone === undefined || (typeof action.zone === 'string' && ZONE_ID_PATTERN.test(action.zone));
+  }
   if (typeof action.id !== 'string' || action.id.length > 100) return false;
   if (action.type === 'rotate' || action.type === 'flip' || action.type === 'unstack') return true;
   if (action.type === 'move') return typeof action.x === 'number' && Number.isFinite(action.x) && typeof action.y === 'number' && Number.isFinite(action.y);
