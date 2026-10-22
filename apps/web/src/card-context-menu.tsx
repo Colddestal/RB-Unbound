@@ -67,11 +67,16 @@ export function CardContextMenu({
     onClose();
   };
 
+  const menuWidth = 230;
+  const menuHeight = 430;
+  const left = Math.max(8, Math.min(state.x, window.innerWidth - menuWidth - 8));
+  const top = Math.max(8, Math.min(state.y, window.innerHeight - menuHeight - 8));
+
   return <div
     ref={ref}
     className="card-context-menu"
     role="menu"
-    style={{ left: state.x, top: state.y }}
+    style={{ left, top }}
     onContextMenu={event => event.preventDefault()}
   >
     <div className="card-context-heading">
