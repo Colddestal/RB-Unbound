@@ -7,7 +7,7 @@ import {
   builtInGameModules,
   genericDuelModule,
   initialTable,
-  isTableState,
+  migrateTableState,
   type Card,
   type GameModule,
   type PlayerId,
@@ -49,7 +49,10 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
 
-  const execute = (action: Parameters<typeof applyAction>[1]) => setTable(state => applyAction(state, action));
+  const allowedZones = activeModule.zones.map(zone => zone.id);
+  const stackableZones = activeModule.zones.filter(zone => zone.stackable).map(zone => zone.id);
+  const execute = (action: Parameters<typeof applyAction>[1]) =>
+    setTable(state => applyAction(state, action, allowedZones, stackableZones));
   const selectedCard = table.cards.find(card => card.id === selected);
   const selectedCards = table.cards.filter(card => multiSelected.includes(card.id));
   const inspectorCard = table.cards.find(card => card.id === (hovered || pinned));
@@ -65,7 +68,7 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
     const url = URL.createObjectURL(new Blob([JSON.stringify(table, null, 2)], { type: 'application/json' }));
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = 'rb-unbound-table-v3.json';
+    anchor.download = 'rb-unbound-table-v4.json';
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -75,13 +78,14 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
     try {
       if (file.size > 250_000) throw Error('File too large');
       const parsed: unknown = JSON.parse(await file.text());
-      if (!isTableState(parsed)) throw Error('Invalid table file');
-      setTable(parsed);
+      const migrated = migrateTableState(parsed);
+      if (!migrated) throw Error('Invalid table file');
+      setTable(migrated);
       setSelected('');
       setStackTarget('');
       setError('');
     } catch {
-      setError('Could not load this table file. Alpha v3 table files are required.');
+      setError('Could not load this table file. RB Unbound v3/v4 table files are supported.');
     }
   };
 
@@ -253,6 +257,25 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
       {discard.slice(-6).map((card, index) => renderCard(card, index, discard, 'discard'))}
       {hand.map((card, index) => renderCard(card, index, hand, 'hand'))}
       {field.map((card, index) => renderCard(card, index, field, 'field'))}
+      {activeModule.zones.filter(zone => zone.kind === 'custom').flatMap(zone => {
+        const cards = table.cards.filter(card => card.owner === player && card.zone === zone.id);
+        return cards.map((card, index) => {
+          const position = zone.defaultPosition ?? { x: 500, y: 300 };
+          const styleOffset = index * 10;
+          return <button
+            key={card.id}
+            className={`card custom-zone-card ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${card.faceUp ? '' : `back back-${cardBack.pattern}`}`}
+            style={{ left: `calc(${position.x / 10}% + ${styleOffset}px)`, top: `calc(${position.y / 6}% + ${styleOffset}px)`, zIndex: 30 + index }}
+            onMouseEnter={() => setHovered(card.id)}
+            onMouseLeave={() => setHovered('')}
+            onClick={() => { setSelected(card.id); setMultiSelected([]); setPinned(card.id); }}
+          >
+            <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span>
+            <span>{card.faceUp ? card.label : 'Hidden card'}</span>
+            <small>P{card.owner} · {zone.label}</small>
+          </button>;
+        });
+      })}
     </>;
   };
 
@@ -284,6 +307,9 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
       <button disabled={!targets.length} onClick={() => moveTargets('field')}>To {zoneLabel('field')}</button>
       <button disabled={!targets.length} onClick={() => moveTargets('discard')}>{zoneLabel('discard')}</button>
       <button disabled={!targets.length} onClick={() => moveTargets('deck')}>To {zoneLabel('deck')}</button>
+      {activeModule.zones.filter(zone => zone.kind === 'custom').map(zone =>
+        <button key={zone.id} disabled={!targets.length} onClick={() => moveTargets(zone.id)}>To {zone.label}</button>
+      )}
       <select value={stackTarget} onChange={e => setStackTarget(e.target.value)} disabled={!selectedCard || selectedCard.zone !== 'field'}>
         <option value="">Stack target…</option>
         {ownFieldCards.map(card => <option key={card.id} value={card.id}>{card.label}</option>)}
@@ -359,11 +385,17 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
         }}
       >
         <div className="midline"><span>{zoneLabel('field').toUpperCase()}</span></div>
-        {activeModule.zones.filter(zone => zone.defaultPosition && zone.kind === 'custom').map(zone => <div
-          key={zone.id}
-          className="module-zone-marker"
-          style={{ left: `${zone.defaultPosition!.x / 10}%`, top: `${zone.defaultPosition!.y / 6}%` }}
-        >{zone.label}</div>)}
+        {activeModule.zones.filter(zone => zone.defaultPosition && zone.kind === 'custom').map(zone => {
+          const cards = table.cards.filter(card => card.zone === zone.id);
+          return <div
+            key={zone.id}
+            className="module-zone-marker interactive"
+            style={{ left: `${zone.defaultPosition!.x / 10}%`, top: `${zone.defaultPosition!.y / 6}%` }}
+          >
+            <strong>{zone.label}</strong>
+            <span>{cards.length} card{cards.length === 1 ? '' : 's'}</span>
+          </div>;
+        })}
         {selectionBox && <div className="selection-box" style={{
           left: Math.min(selectionBox.startX, selectionBox.endX),
           top: Math.min(selectionBox.startY, selectionBox.endY),

@@ -155,3 +155,14 @@ Game modules can now provide normalized board positions for owner-scoped zones u
 Modules may also define non-interactive custom zone markers with a default normalized position. These markers are presentation/layout hints only at this stage; they do not yet create new serialized card-zone kinds.
 
 This keeps the current saved-table schema stable while moving visual board layout into module data. A later state-schema migration can promote selected custom zones into fully interactive destinations once compatibility rules are defined.
+
+
+## Interactive module zones and table state v4
+
+Table state version 4 allows cards to store validated module zone IDs instead of only the four original core zone names. Existing version 3 table files remain importable through an explicit migration path.
+
+The tabletop action reducer accepts an active module's allowed-zone and stackable-zone policy. Moves into undeclared zones are rejected, and stacking is only permitted in zones declared stackable by the module.
+
+Per-view projections also accept the active module's public-zone list so custom zones can participate in multiplayer hidden-information filtering without becoming universally visible by default.
+
+The development server currently uses the generic built-in module policy until room-level module selection is added in the multiplayer module PR.

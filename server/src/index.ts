@@ -19,6 +19,7 @@ import {
 import {
   applyAction,
   createInitialTable,
+  genericDuelModule,
   isClientTableAction,
   projectTable,
   type ClientTableAction,
@@ -279,9 +280,18 @@ function visibleHandsForSeat(room: RoomState, seatNumber: PlayerId): PlayerId[] 
   return visible;
 }
 
+function moduleZonePolicy() {
+  return {
+    allowedZones: genericDuelModule.zones.map(zone => zone.id),
+    stackableZones: genericDuelModule.zones.filter(zone => zone.stackable).map(zone => zone.id),
+    publicZones: genericDuelModule.zones.filter(zone => zone.visibility === 'public').map(zone => zone.id),
+  };
+}
+
 function emitMatchViews(room: RoomState): void {
   const match = matches.get(room.code);
   if (!match) return;
+  const policy = moduleZonePolicy();
 
   for (const seat of room.seats) {
     if (!seat.memberId) continue;
@@ -289,7 +299,7 @@ function emitMatchViews(room: RoomState): void {
       seat: seat.seat,
       spectator: false,
       revision: match.revision,
-      table: projectTable(match.table, seat.seat as PlayerId, visibleHandsForSeat(room, seat.seat as PlayerId)),
+      table: projectTable(match.table, seat.seat as PlayerId, visibleHandsForSeat(room, seat.seat as PlayerId), policy.publicZones),
     });
   }
 
@@ -297,7 +307,7 @@ function emitMatchViews(room: RoomState): void {
     socketForMember(spectator.memberId)?.emit('match:update', {
       spectator: true,
       revision: match.revision,
-      table: projectTable(match.table),
+      table: projectTable(match.table, undefined, undefined, policy.publicZones),
     });
   }
 }
@@ -622,7 +632,8 @@ io.on('connection', socket => {
     const action = toServerAction(match.table, session.seat, payload.action);
     if (!action) return fail(socket, 'Unsupported match action.');
 
-    const updated = applyAction(match.table, action);
+    const policy = moduleZonePolicy();
+    const updated = applyAction(match.table, action, policy.allowedZones, policy.stackableZones);
     if (updated === match.table) {
       socket.emit('match:action-rejected', { reason: 'not-allowed', sequence, lastSequence, revision: match.revision });
       return;
