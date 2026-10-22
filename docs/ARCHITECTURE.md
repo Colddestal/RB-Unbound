@@ -175,3 +175,12 @@ Card definitions are module-bound catalog records containing a stable card ID, m
 Deck validation requires every referenced card to exist in the selected module's catalog. Cross-module decks and unknown card IDs are rejected. Card search indexes names, stable IDs and metadata values without depending on a specific game's fields.
 
 When a validated deck is loaded into the local tabletop, physical card instances receive unique tabletop IDs plus a safe `definitionId` link back to the catalog. Hidden multiplayer projections redact both the card name and definition ID.
+
+
+## Multiplayer module selection
+
+Room settings now pin an exact game module ID and version. The server validates that the selected module supports the room's match format before room creation or settings changes.
+
+The selected module is persisted with the room snapshot and restored after reconnect or server restart. Match creation uses that module's built-in starter deck, and authoritative action validation/projection uses that module's allowed, stackable and public zones.
+
+Clients render module identity, labels, card-back patterns and custom zones from the server-provided room settings. The client cannot choose a different module after the match starts because room settings are locked with the rest of the lobby configuration.
