@@ -622,7 +622,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           <strong>Your hand</strong>
           <div className="hand-cards">{ownHand.map(card => <button
             key={card.id}
-            className={`mini-card ${selected === card.id ? 'selected' : ''}`}
+            className={`mini-card ${selected === card.id ? 'selected' : ''} ${dragPreview?.id === card.id ? 'drag-source' : ''}`}
             onMouseEnter={() => setHovered(card.id)}
             onMouseLeave={() => setHovered('')}
             onClick={() => { setSelected(card.id); setPinned(card.id); }}
