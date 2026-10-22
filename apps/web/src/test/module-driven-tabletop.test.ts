@@ -14,9 +14,9 @@ describe('built-in module rendering data', () => {
     const frontierField = frontierSkirmishModule.zones.find(zone => zone.kind === 'field')?.label;
 
     expect(genericDeck).toBe('Deck');
-    expect(frontierDeck).toBe('Supply');
+    expect(frontierDeck).toBe('Deck');
     expect(genericField).toBe('Field');
-    expect(frontierField).toBe('Frontier');
+    expect(frontierField).toBe('Battlefield');
   });
 
   it('uses different card-back descriptors between modules', () => {
@@ -29,16 +29,31 @@ describe('built-in module rendering data', () => {
     const frontierDeck = frontierSkirmishModule.zones.find(zone => zone.kind === 'deck');
 
     expect(genericDeck?.seatPositions?.['1']).toEqual({ x: 70, y: 470 });
-    expect(frontierDeck?.seatPositions?.['1']).toEqual({ x: 825, y: 455 });
+    expect(frontierDeck?.seatPositions?.['1']).toEqual({ x: 885, y: 355 });
     expect(genericDeck?.seatPositions?.['1']).not.toEqual(frontierDeck?.seatPositions?.['1']);
   });
 
-  it('supports module-defined custom board markers', () => {
-    const commandPost = frontierSkirmishModule.zones.find(zone => zone.id === 'command-post');
-    expect(commandPost).toMatchObject({
+  it('supports sized owner-scoped mat areas', () => {
+    const base = frontierSkirmishModule.zones.find(zone => zone.id === 'base');
+    expect(base).toMatchObject({
       kind: 'custom',
-      label: 'Command Post',
+      label: 'Base',
+      ownerScoped: true,
+      size: { width: 560, height: 105 },
+      seatPositions: {
+        '1': { x: 430, y: 455 },
+        '2': { x: 570, y: 145 },
+      },
+    });
+  });
+
+  it('gives the battlefield the dominant shared center area', () => {
+    const battlefield = frontierSkirmishModule.zones.find(zone => zone.id === 'field');
+    expect(battlefield).toMatchObject({
+      label: 'Battlefield',
+      ownerScoped: false,
       defaultPosition: { x: 500, y: 300 },
+      size: { width: 720, height: 190 },
     });
   });
 });

@@ -18,6 +18,10 @@ export type ModuleZoneDefinition = {
     x: number;
     y: number;
   }>>;
+  size?: {
+    width: number;
+    height: number;
+  };
 };
 
 export type CardBackDefinition = {
@@ -80,6 +84,10 @@ export function isGameModule(value: unknown): value is GameModule {
         if (position.x < 0 || position.x > 1000 || position.y < 0 || position.y > 600) return false;
       }
     }
+    if (zone.size) {
+      if (!Number.isFinite(zone.size.width) || !Number.isFinite(zone.size.height)) return false;
+      if (zone.size.width < 40 || zone.size.width > 1000 || zone.size.height < 40 || zone.size.height > 600) return false;
+    }
   }
 
   const backIds = new Set<string>();
@@ -117,7 +125,7 @@ export const genericDuelModule: GameModule = {
       '2': { x: 850, y: 40 },
     } },
     { id: 'hand', label: 'Hand', kind: 'hand', visibility: 'owner', ownerScoped: true },
-    { id: 'field', label: 'Field', kind: 'field', visibility: 'public', ownerScoped: false, stackable: true },
+    { id: 'field', label: 'Field', kind: 'field', visibility: 'public', ownerScoped: false, stackable: true, defaultPosition: { x: 500, y: 300 }, size: { width: 720, height: 220 } },
     { id: 'discard', label: 'Discard', kind: 'discard', visibility: 'public', ownerScoped: true, seatPositions: {
       '1': { x: 850, y: 470 },
       '2': { x: 90, y: 45 },
@@ -142,17 +150,37 @@ export const frontierSkirmishModule: GameModule = {
   description: 'Second original module used to prove that RB Unbound presentation can swap without core tabletop changes.',
   supportedFormats: ['1v1', '2v2'],
   zones: [
-    { id: 'deck', label: 'Supply', kind: 'deck', visibility: 'hidden', ownerScoped: true, seatPositions: {
-      '1': { x: 825, y: 455 },
-      '2': { x: 80, y: 55 },
-    } },
-    { id: 'hand', label: 'Orders', kind: 'hand', visibility: 'owner', ownerScoped: true },
-    { id: 'field', label: 'Frontier', kind: 'field', visibility: 'public', ownerScoped: false, stackable: true },
-    { id: 'command-post', label: 'Command Post', kind: 'custom', visibility: 'public', ownerScoped: false, defaultPosition: { x: 500, y: 300 } },
-    { id: 'discard', label: 'Scrapyard', kind: 'discard', visibility: 'public', ownerScoped: true, seatPositions: {
-      '1': { x: 690, y: 455 },
-      '2': { x: 215, y: 55 },
-    } },
+    { id: 'deck', label: 'Deck', kind: 'deck', visibility: 'hidden', ownerScoped: true, seatPositions: {
+      '1': { x: 885, y: 355 },
+      '2': { x: 115, y: 245 },
+    }, size: { width: 95, height: 120 } },
+    { id: 'hand', label: 'Hand', kind: 'hand', visibility: 'owner', ownerScoped: true },
+    { id: 'field', label: 'Battlefield', kind: 'field', visibility: 'public', ownerScoped: false, stackable: true,
+      defaultPosition: { x: 500, y: 300 }, size: { width: 720, height: 190 } },
+    { id: 'base', label: 'Base', kind: 'custom', visibility: 'public', ownerScoped: true, seatPositions: {
+      '1': { x: 430, y: 455 },
+      '2': { x: 570, y: 145 },
+    }, size: { width: 560, height: 105 } },
+    { id: 'resources', label: 'Resources', kind: 'custom', visibility: 'public', ownerScoped: true, seatPositions: {
+      '1': { x: 430, y: 555 },
+      '2': { x: 570, y: 45 },
+    }, size: { width: 560, height: 70 } },
+    { id: 'commander', label: 'Commander', kind: 'custom', visibility: 'public', ownerScoped: true, seatPositions: {
+      '1': { x: 750, y: 455 },
+      '2': { x: 250, y: 145 },
+    }, size: { width: 95, height: 105 } },
+    { id: 'vanguard', label: 'Vanguard', kind: 'custom', visibility: 'public', ownerScoped: true, seatPositions: {
+      '1': { x: 875, y: 455 },
+      '2': { x: 125, y: 145 },
+    }, size: { width: 95, height: 105 } },
+    { id: 'resource-deck', label: 'Resource Deck', kind: 'custom', visibility: 'hidden', ownerScoped: true, seatPositions: {
+      '1': { x: 120, y: 555 },
+      '2': { x: 880, y: 45 },
+    }, size: { width: 95, height: 90 } },
+    { id: 'discard', label: 'Discard', kind: 'discard', visibility: 'public', ownerScoped: true, seatPositions: {
+      '1': { x: 885, y: 555 },
+      '2': { x: 115, y: 45 },
+    }, size: { width: 95, height: 90 } },
   ],
   cardBacks: [
     { id: 'frontier-stripes', label: 'Frontier Stripes', pattern: 'stripes' },
