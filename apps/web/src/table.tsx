@@ -34,7 +34,8 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
     const fallback = kind === 'deck'
       ? (player === 1 ? { x: 70, y: 470 } : { x: 850, y: 40 })
       : (player === 1 ? { x: 850, y: 470 } : { x: 90, y: 45 });
-    return zone?.seatPositions?.[String(player) as '1' | '2'] ?? zone?.defaultPosition ?? fallback;
+    const seatKey = player === 1 ? '1' : '2';
+    return zone?.seatPositions?.[seatKey] ?? zone?.defaultPosition ?? fallback;
   };
   const [table, setTable] = useState<TableState>(() => structuredClone(initialTable));
   const [viewer, setViewer] = useState<PlayerId>(1);
