@@ -108,7 +108,12 @@ export function createRoom(code: string, ownerMemberId: string, ownerName: strin
     turnTimerSeconds: null,
     customRules: {},
   };
-  const merged = { ...defaults, ...settings, format };
+  const merged = {
+    ...defaults,
+    ...settings,
+    format,
+    bestOf: settings?.bestOf === 3 ? 3 : 1,
+  };
   const seats: Seat[] = ([1, 2, 3, 4] as SeatNumber[]).map(seat => ({
     seat,
     team: teamFor(format, seat),
