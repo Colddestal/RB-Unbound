@@ -174,8 +174,14 @@ export function applyAction(
   };
 }
 
-export function projectTable(state: TableState, viewer?: PlayerId, visibleHandOwners?: PlayerId[]): TableView {
+export function projectTable(
+  state: TableState,
+  viewer?: PlayerId,
+  visibleHandOwners?: PlayerId[],
+  publicZones: readonly string[] = ['field', 'discard'],
+): TableView {
   const privateHandOwners = new Set<PlayerId>(visibleHandOwners ?? (viewer ? [viewer] : []));
+  const publicZoneIds = new Set(publicZones);
   const hidden = ([1, 2, 3, 4] as PlayerId[])
     .map(owner => ({
       owner,
@@ -187,7 +193,7 @@ export function projectTable(state: TableState, viewer?: PlayerId, visibleHandOw
   const cards: PublicCard[] = [];
   for (const card of state.cards) {
     const visiblePrivateHand = card.zone === 'hand' && privateHandOwners.has(card.owner);
-    const publicZone = card.zone === 'field' || card.zone === 'discard';
+    const publicZone = publicZoneIds.has(card.zone);
     if (!visiblePrivateHand && !publicZone) continue;
 
     const privateIdentityVisible = privateHandOwners.has(card.owner);
