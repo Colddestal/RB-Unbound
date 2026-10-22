@@ -3,10 +3,13 @@ import { io, type Socket } from 'socket.io-client';
 import { CardInspector } from './card-inspector';
 import { actionForCode, displayKey, type KeyBindings } from './controls';
 import {
-  builtInGameModules,
+  builtInModulePackages,
   genericDuelModule,
+  isModulePackage,
+  modulePackageKey,
   type ClientTableAction,
   type GameModule,
+  type ModulePackage,
   type PlayerId,
   type PublicCard,
   type TableView,
@@ -19,6 +22,7 @@ type RoomSnapshot = {
   code: string;
   status: 'lobby' | 'active' | 'closed';
   settingsLocked: boolean;
+  modulePackage: ModulePackage;
   settings: {
     roomName: string;
     format: MatchFormat;
@@ -48,7 +52,7 @@ type MatchSnapshot = { seat?: PlayerId; spectator: boolean; revision: number; ta
 
 const SERVER_URL = 'http://127.0.0.1:3001';
 
-export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
+export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBindings; modulePackages: ModulePackage[] }) {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
@@ -58,7 +62,7 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
   const [displayName, setDisplayName] = useState('Player');
   const [roomName, setRoomName] = useState('Project Poor Table');
   const [format, setFormat] = useState<MatchFormat>('1v1');
-  const [createModuleId, setCreateModuleId] = useState(genericDuelModule.id);
+  const [createModuleKey, setCreateModuleKey] = useState(modulePackageKey(genericDuelModule));
   const [createPublic, setCreatePublic] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [joinInviteCode, setJoinInviteCode] = useState('');
@@ -120,7 +124,13 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
       setInviteCode(payload.inviteCode);
       window.localStorage.setItem(`rb-unbound-room-invite-${payload.roomCode}`, payload.inviteCode);
     });
-    client.on('room:update', (payload: RoomSnapshot) => setRoom(payload));
+    client.on('room:update', (payload: RoomSnapshot) => {
+      if (!isModulePackage(payload.modulePackage)) {
+        setError('The room requires an invalid or unsupported module package.');
+        return;
+      }
+      setRoom(payload);
+    });
     client.on('room:started', () => client.emit('match:request-state'));
     client.on('match:update', (payload: MatchSnapshot) => {
       setMatch(payload);
@@ -136,12 +146,11 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
     return () => { client.disconnect(); };
   }, []);
 
-  const activeModule = room
-    ? builtInGameModules.find(module => module.id === room.settings.moduleId && module.version === room.settings.moduleVersion) ?? genericDuelModule
-    : genericDuelModule;
+  const activePackage = room?.modulePackage ?? builtInModulePackages[0];
+  const activeModule = activePackage.module;
   const cardBack = activeModule.cardBacks[0];
   const zoneLabel = (kind: string) => activeModule.zones.find(zone => zone.kind === kind || zone.id === kind)?.label ?? kind;
-  const compatibleCreateModules = builtInGameModules.filter(module => module.supportedFormats.includes(format));
+  const compatibleCreatePackages = modulePackages.filter(bundle => bundle.module.supportedFormats.includes(format));
   const ownSeat = identity?.seat ? room?.seats.find(seat => seat.seat === identity.seat) : undefined;
   const isOwner = Boolean(ownSeat?.owner);
   const selectedCard = match?.table.cards.find(card => card.id === selected);
@@ -197,7 +206,16 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
 
   const create = () => {
     setError('');
-    socket?.emit('room:create', { displayName, roomName, format, moduleId: createModuleId, isPublic: createPublic });
+    const selectedPackage = modulePackages.find(bundle => modulePackageKey(bundle.module) === createModuleKey) ?? builtInModulePackages[0];
+    socket?.emit('room:create', {
+      displayName,
+      roomName,
+      format,
+      moduleId: selectedPackage.module.id,
+      moduleVersion: selectedPackage.module.version,
+      modulePackage: selectedPackage,
+      isPublic: createPublic,
+    });
   };
 
   const join = (spectator = false) => {
@@ -280,15 +298,20 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
           <label>Format<select value={format} onChange={e => {
             const next = e.target.value as MatchFormat;
             setFormat(next);
-            const current = builtInGameModules.find(module => module.id === createModuleId);
-            if (!current?.supportedFormats.includes(next)) {
-              setCreateModuleId(builtInGameModules.find(module => module.supportedFormats.includes(next))?.id ?? genericDuelModule.id);
+            const current = modulePackages.find(bundle => modulePackageKey(bundle.module) === createModuleKey);
+            if (!current?.module.supportedFormats.includes(next)) {
+              const fallback = modulePackages.find(bundle => bundle.module.supportedFormats.includes(next)) ?? builtInModulePackages[0];
+              setCreateModuleKey(modulePackageKey(fallback.module));
             }
           }}>
             <option value="1v1">1v1</option><option value="2v2">2v2</option><option value="ffa4">1v1v1v1</option>
           </select></label>
-          <label>Game module<select value={createModuleId} onChange={e => setCreateModuleId(e.target.value)}>
-            {compatibleCreateModules.map((module: GameModule) => <option key={module.id} value={module.id}>{module.name} · v{module.version}</option>)}
+          <label>Game module<select value={createModuleKey} onChange={e => setCreateModuleKey(e.target.value)}>
+            {compatibleCreatePackages.map(bundle => {
+              const module: GameModule = bundle.module;
+              const key = modulePackageKey(module);
+              return <option key={key} value={key}>{module.name} · v{module.version}</option>;
+            })}
           </select></label>
           <label className="inline-check"><input type="checkbox" checked={createPublic} onChange={e => setCreatePublic(e.target.checked)} /> Public room</label>
           <p className="muted">{createPublic ? 'Public rooms only require the room code.' : 'Private rooms require both the room code and a separate invite code.'}</p>
@@ -345,9 +368,19 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
         <label>Format<select disabled={!isOwner} value={room.settings.format} onChange={e => socket?.emit('room:settings', { format: e.target.value })}>
           <option value="1v1">1v1</option><option value="2v2">2v2</option><option value="ffa4">1v1v1v1</option>
         </select></label>
-        <label>Game module<select disabled={!isOwner} value={room.settings.moduleId} onChange={e => socket?.emit('room:settings', { moduleId: e.target.value })}>
-          {builtInGameModules.filter(module => module.supportedFormats.includes(room.settings.format)).map(module =>
-            <option key={module.id} value={module.id}>{module.name} · v{module.version}</option>)}
+        <label>Game module<select disabled={!isOwner} value={modulePackageKey(activeModule)} onChange={e => {
+          const bundle = modulePackages.find(item => modulePackageKey(item.module) === e.target.value);
+          if (bundle) socket?.emit('room:settings', {
+            moduleId: bundle.module.id,
+            moduleVersion: bundle.module.version,
+            modulePackage: bundle,
+          });
+        }}>
+          {modulePackages.filter(bundle => bundle.module.supportedFormats.includes(room.settings.format)).map(bundle => {
+            const module = bundle.module;
+            const key = modulePackageKey(module);
+            return <option key={key} value={key}>{module.name} · v{module.version}</option>;
+          })}
         </select></label>
         <label>Ruleset<select disabled={!isOwner} value={room.settings.ruleset} onChange={e => socket?.emit('room:settings', { ruleset: e.target.value })}>
           <option value="standard">Standard</option><option value="unrestricted">Unrestricted</option><option value="custom">Custom</option>
@@ -364,7 +397,7 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
 
     {room.status === 'active' && match && <div className="match-layout">
       <div className="left-stack">
-        <CardInspector card={inspectorCard} pinned={inspectorPinned} onClear={() => setPinned('')} module={activeModule} />
+        <CardInspector card={inspectorCard} pinned={inspectorPinned} onClear={() => setPinned('')} module={activeModule} catalog={activePackage.cards} />
         <aside className="panel match-info">
         <h2>Match</h2>
         <p>{identity?.spectator ? 'Spectating' : `You are Seat ${identity?.seat}`}</p>
