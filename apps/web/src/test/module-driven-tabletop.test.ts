@@ -23,4 +23,22 @@ describe('built-in module rendering data', () => {
     expect(genericDuelModule.cardBacks[0].pattern).toBe('grid');
     expect(frontierSkirmishModule.cardBacks[0].pattern).toBe('stripes');
   });
+
+  it('uses module-defined per-seat zone placement', () => {
+    const genericDeck = genericDuelModule.zones.find(zone => zone.kind === 'deck');
+    const frontierDeck = frontierSkirmishModule.zones.find(zone => zone.kind === 'deck');
+
+    expect(genericDeck?.seatPositions?.['1']).toEqual({ x: 70, y: 470 });
+    expect(frontierDeck?.seatPositions?.['1']).toEqual({ x: 825, y: 455 });
+    expect(genericDeck?.seatPositions?.['1']).not.toEqual(frontierDeck?.seatPositions?.['1']);
+  });
+
+  it('supports module-defined custom board markers', () => {
+    const commandPost = frontierSkirmishModule.zones.find(zone => zone.id === 'command-post');
+    expect(commandPost).toMatchObject({
+      kind: 'custom',
+      label: 'Command Post',
+      defaultPosition: { x: 500, y: 300 },
+    });
+  });
 });
