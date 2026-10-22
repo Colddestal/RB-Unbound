@@ -41,6 +41,8 @@ export type RoomState = {
   seats: Seat[];
   spectators: { memberId: string; displayName: string }[];
   chat: ChatMessage[];
+  /** Server-only hash used to authorize joins to private rooms. Never expose in public room snapshots. */
+  inviteCodeHash?: string;
 };
 
 const teamFor = (format: MatchFormat, seat: SeatNumber): TeamNumber => {
