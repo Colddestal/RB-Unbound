@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { CardInspector } from './card-inspector';
 import {
   applyAction,
@@ -78,6 +78,41 @@ export function Table() {
     execute({ type: 'to-zone', id: selectedCard.id, zone, actor: viewer });
     if (zone !== 'field') setStackTarget('');
   };
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.matches('input, textarea, select, [contenteditable="true"]')) return;
+
+      if (event.key === 'Escape') {
+        setSelected('');
+        setPinned('');
+        setStackTarget('');
+        return;
+      }
+
+      if (!selectedCard || selectedCard.owner !== viewer) return;
+
+      const key = event.key.toLowerCase();
+      if (key === 'r') execute({ type: 'rotate', id: selectedCard.id, actor: viewer });
+      else if (key === 'f') execute({ type: 'flip', id: selectedCard.id, actor: viewer });
+      else if (key === 'delete') moveSelected('discard');
+      else if (key === 'h') moveSelected('hand');
+      else if (key === 'p') moveSelected('field');
+      else if (selectedCard.zone === 'field' && ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
+        event.preventDefault();
+        const step = event.shiftKey ? 50 : 15;
+        const dx = key === 'arrowleft' ? -step : key === 'arrowright' ? step : 0;
+        const dy = key === 'arrowup' ? -step : key === 'arrowdown' ? step : 0;
+        execute({ type: 'move', id: selectedCard.id, actor: viewer, x: selectedCard.x + dx, y: selectedCard.y + dy });
+      } else return;
+
+      event.preventDefault();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedCard, viewer]);
 
   const renderCard = (card: Card, index: number, collection: Card[], mode: 'hand' | 'field' | 'discard') => {
     const owned = canManipulate(card, viewer);
@@ -182,6 +217,7 @@ export function Table() {
       <button className={viewer === 1 ? 'active' : ''} onClick={() => { setViewer(1); setSelected(''); }}>Player 1</button>
       <button className={viewer === 2 ? 'active' : ''} onClick={() => { setViewer(2); setSelected(''); }}>Player 2</button>
       <span className="chip">Opponent hand stays hidden</span>
+      <span className="chip">PC controls enabled</span>
     </section>
 
     <section className="toolbar">
@@ -198,6 +234,18 @@ export function Table() {
       </select>
       <button disabled={!selectedCard || !stackTarget || selectedCard.zone !== 'field'} onClick={() => selectedCard && execute({ type: 'stack', id: selectedCard.id, targetId: stackTarget, actor: viewer })}>Stack</button>
       <button disabled={!selectedCard?.stackOn} onClick={() => selectedCard && execute({ type: 'unstack', id: selectedCard.id, actor: viewer })}>Unstack</button>
+    </section>
+
+    <section className="shortcut-bar" aria-label="Keyboard shortcuts">
+      <strong>Keyboard</strong>
+      <kbd>R</kbd><span>Rotate</span>
+      <kbd>F</kbd><span>Flip</span>
+      <kbd>P</kbd><span>Play / field</span>
+      <kbd>H</kbd><span>Hand</span>
+      <kbd>Del</kbd><span>Discard</span>
+      <kbd>↑↓←→</kbd><span>Nudge</span>
+      <kbd>Shift + ↑↓←→</kbd><span>Large nudge</span>
+      <kbd>Esc</kbd><span>Clear</span>
     </section>
 
     <section className="filebar">
