@@ -2,7 +2,15 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { io, type Socket } from 'socket.io-client';
 import { CardInspector } from './card-inspector';
 import { actionForCode, displayKey, type KeyBindings } from './controls';
-import type { ClientTableAction, PlayerId, PublicCard, TableView } from '@rb-unbound/tabletop';
+import {
+  builtInGameModules,
+  genericDuelModule,
+  type ClientTableAction,
+  type GameModule,
+  type PlayerId,
+  type PublicCard,
+  type TableView,
+} from '@rb-unbound/tabletop';
 
 type MatchFormat = '1v1' | '2v2' | 'ffa4';
 type Ruleset = 'standard' | 'unrestricted' | 'custom';
@@ -14,6 +22,8 @@ type RoomSnapshot = {
   settings: {
     roomName: string;
     format: MatchFormat;
+    moduleId: string;
+    moduleVersion: string;
     ruleset: Ruleset;
     isPublic: boolean;
     allowSpectators: boolean;
@@ -48,6 +58,7 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
   const [displayName, setDisplayName] = useState('Player');
   const [roomName, setRoomName] = useState('Project Poor Table');
   const [format, setFormat] = useState<MatchFormat>('1v1');
+  const [createModuleId, setCreateModuleId] = useState(genericDuelModule.id);
   const [createPublic, setCreatePublic] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [joinInviteCode, setJoinInviteCode] = useState('');
@@ -125,6 +136,12 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
     return () => { client.disconnect(); };
   }, []);
 
+  const activeModule = room
+    ? builtInGameModules.find(module => module.id === room.settings.moduleId && module.version === room.settings.moduleVersion) ?? genericDuelModule
+    : genericDuelModule;
+  const cardBack = activeModule.cardBacks[0];
+  const zoneLabel = (kind: string) => activeModule.zones.find(zone => zone.kind === kind || zone.id === kind)?.label ?? kind;
+  const compatibleCreateModules = builtInGameModules.filter(module => module.supportedFormats.includes(format));
   const ownSeat = identity?.seat ? room?.seats.find(seat => seat.seat === identity.seat) : undefined;
   const isOwner = Boolean(ownSeat?.owner);
   const selectedCard = match?.table.cards.find(card => card.id === selected);
@@ -180,7 +197,7 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
 
   const create = () => {
     setError('');
-    socket?.emit('room:create', { displayName, roomName, format, isPublic: createPublic });
+    socket?.emit('room:create', { displayName, roomName, format, moduleId: createModuleId, isPublic: createPublic });
   };
 
   const join = (spectator = false) => {
@@ -208,7 +225,7 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
 
     return <button
       key={card.id}
-      className={`card ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${card.faceUp ? '' : 'back'} ${owned ? '' : 'locked'}`}
+      className={`card ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${card.faceUp ? '' : `back back-${cardBack.pattern}`} ${owned ? '' : 'locked'}`}
       style={style}
       onMouseEnter={() => setHovered(card.id)}
       onMouseLeave={() => setHovered('')}
@@ -242,7 +259,7 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
     >
       <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span>
       <span>{card.label ?? 'Hidden card'}</span>
-      <small>P{card.owner} · field</small>
+      <small>P{card.owner} · {zoneLabel(card.zone)}</small>
     </button>;
   };
 
@@ -260,8 +277,18 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
           <h2>Create a room</h2>
           <label>Display name<input value={displayName} maxLength={32} onChange={e => setDisplayName(e.target.value)} /></label>
           <label>Room name<input value={roomName} maxLength={60} onChange={e => setRoomName(e.target.value)} /></label>
-          <label>Format<select value={format} onChange={e => setFormat(e.target.value as MatchFormat)}>
+          <label>Format<select value={format} onChange={e => {
+            const next = e.target.value as MatchFormat;
+            setFormat(next);
+            const current = builtInGameModules.find(module => module.id === createModuleId);
+            if (!current?.supportedFormats.includes(next)) {
+              setCreateModuleId(builtInGameModules.find(module => module.supportedFormats.includes(next))?.id ?? genericDuelModule.id);
+            }
+          }}>
             <option value="1v1">1v1</option><option value="2v2">2v2</option><option value="ffa4">1v1v1v1</option>
+          </select></label>
+          <label>Game module<select value={createModuleId} onChange={e => setCreateModuleId(e.target.value)}>
+            {compatibleCreateModules.map((module: GameModule) => <option key={module.id} value={module.id}>{module.name} · v{module.version}</option>)}
           </select></label>
           <label className="inline-check"><input type="checkbox" checked={createPublic} onChange={e => setCreatePublic(e.target.checked)} /> Public room</label>
           <p className="muted">{createPublic ? 'Public rooms only require the room code.' : 'Private rooms require both the room code and a separate invite code.'}</p>
@@ -292,7 +319,7 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
 
   return <div className="app multiplayer-shell">
     <header>
-      <div><span className="eyebrow">ROOM {room.code}</span><h1>{room.settings.roomName}</h1><p>{room.settings.format.toUpperCase()} · {room.settings.ruleset} · {room.settings.isPublic ? 'public' : 'private'} · {room.status}</p></div>
+      <div><span className="eyebrow">ROOM {room.code}</span><h1>{room.settings.roomName}</h1><p>{activeModule.name} v{activeModule.version} · {room.settings.format.toUpperCase()} · {room.settings.ruleset} · {room.settings.isPublic ? 'public' : 'private'} · {room.status}</p></div>
       <span className={`connection-pill ${connected ? 'online' : ''}`}>{connected ? 'Connected' : 'Reconnecting…'}</span>
     </header>
 
@@ -317,6 +344,10 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
         </div>}
         <label>Format<select disabled={!isOwner} value={room.settings.format} onChange={e => socket?.emit('room:settings', { format: e.target.value })}>
           <option value="1v1">1v1</option><option value="2v2">2v2</option><option value="ffa4">1v1v1v1</option>
+        </select></label>
+        <label>Game module<select disabled={!isOwner} value={room.settings.moduleId} onChange={e => socket?.emit('room:settings', { moduleId: e.target.value })}>
+          {builtInGameModules.filter(module => module.supportedFormats.includes(room.settings.format)).map(module =>
+            <option key={module.id} value={module.id}>{module.name} · v{module.version}</option>)}
         </select></label>
         <label>Ruleset<select disabled={!isOwner} value={room.settings.ruleset} onChange={e => socket?.emit('room:settings', { ruleset: e.target.value })}>
           <option value="standard">Standard</option><option value="unrestricted">Unrestricted</option><option value="custom">Custom</option>
@@ -414,7 +445,12 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
             event.currentTarget.releasePointerCapture(event.pointerId);
           }}
         >
-          <div className="midline"><span>SERVER-SYNCED FIELD</span></div>
+          <div className="midline"><span>{zoneLabel('field').toUpperCase()}</span></div>
+          {activeModule.zones.filter(zone => zone.kind === 'custom' && zone.defaultPosition).map(zone => <div
+            className="module-zone-marker interactive"
+            key={zone.id}
+            style={{ left: `${zone.defaultPosition!.x / 10}%`, top: `${zone.defaultPosition!.y / 6}%` }}
+          ><strong>{zone.label}</strong><span>{match.table.cards.filter(card => card.zone === zone.id).length} cards</span></div>)}
           {selectionBox && <div className="selection-box" style={{
             left: Math.min(selectionBox.startX, selectionBox.endX),
             top: Math.min(selectionBox.startY, selectionBox.endY),
