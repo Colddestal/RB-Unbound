@@ -3,6 +3,30 @@ export type RulesetPreset = 'standard' | 'unrestricted' | 'custom';
 export type RoomStatus = 'lobby' | 'active' | 'closed';
 export type SeatNumber = 1 | 2 | 3 | 4;
 export type TeamNumber = 1 | 2 | 3 | 4;
+export type SeriesBestOf = 1 | 3;
+export type SeriesStatus = 'active' | 'complete';
+export type SeriesGameStatus = 'setup' | 'active' | 'complete';
+
+export type SeriesGameState = {
+  gameNumber: number;
+  status: SeriesGameStatus;
+  firstPlayerSeat?: SeatNumber;
+  winnerTeam?: TeamNumber;
+  /**
+   * Module-defined setup choices for this game. Values are opaque stable IDs,
+   * allowing modules to represent battlefields, maps, objectives, etc.
+   */
+  selectionsBySeat: Partial<Record<SeatNumber, string[]>>;
+};
+
+export type MatchSeriesState = {
+  bestOf: SeriesBestOf;
+  winsNeeded: 1 | 2;
+  status: SeriesStatus;
+  currentGame: number;
+  winsByTeam: Partial<Record<TeamNumber, number>>;
+  games: SeriesGameState[];
+};
 
 export type RoomSettings = {
   roomName: string;
@@ -14,6 +38,7 @@ export type RoomSettings = {
   allowSpectators: boolean;
   readyCheck: boolean;
   shareTeamHands: boolean;
+  bestOf: SeriesBestOf;
   turnTimerSeconds: number | null;
   customRules: Record<string, boolean | number | string>;
 };
@@ -53,6 +78,7 @@ export type RoomState = {
   spectators: { memberId: string; displayName: string }[];
   chat: ChatMessage[];
   history: RoomHistoryEntry[];
+  series?: MatchSeriesState;
   /** Server-only hash used to authorize joins to private rooms. Never expose in public room snapshots. */
   inviteCodeHash?: string;
 };
@@ -78,6 +104,7 @@ export function createRoom(code: string, ownerMemberId: string, ownerName: strin
     allowSpectators: true,
     readyCheck: true,
     shareTeamHands: false,
+    bestOf: 1,
     turnTimerSeconds: null,
     customRules: {},
   };
@@ -161,9 +188,107 @@ export function canForceStart(room: RoomState, actor: string): boolean {
   return room.status === 'lobby' && actor === room.ownerMemberId && allRequiredSeatsOccupied(room);
 }
 
+export function createSeriesState(bestOf: SeriesBestOf): MatchSeriesState {
+  return {
+    bestOf,
+    winsNeeded: bestOf === 3 ? 2 : 1,
+    status: 'active',
+    currentGame: 1,
+    winsByTeam: {},
+    games: [{
+      gameNumber: 1,
+      status: 'setup',
+      selectionsBySeat: {},
+    }],
+  };
+}
+
+function validSelectionIds(selectionIds: readonly string[]): boolean {
+  return selectionIds.length <= 16 &&
+    new Set(selectionIds).size === selectionIds.length &&
+    selectionIds.every(id => /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,99}$/.test(id));
+}
+
+export function setSeriesSelections(
+  series: MatchSeriesState,
+  seat: SeatNumber,
+  selectionIds: string[],
+): MatchSeriesState {
+  if (series.status !== 'active' || !validSelectionIds(selectionIds)) return series;
+  const game = series.games.find(item => item.gameNumber === series.currentGame);
+  if (!game || game.status !== 'setup') return series;
+  return {
+    ...series,
+    games: series.games.map(item => item.gameNumber === game.gameNumber
+      ? { ...item, selectionsBySeat: { ...item.selectionsBySeat, [seat]: [...selectionIds] } }
+      : item),
+  };
+}
+
+export function setSeriesFirstPlayer(
+  series: MatchSeriesState,
+  seat: SeatNumber,
+): MatchSeriesState {
+  if (series.status !== 'active') return series;
+  const game = series.games.find(item => item.gameNumber === series.currentGame);
+  if (!game || game.status !== 'setup') return series;
+  return {
+    ...series,
+    games: series.games.map(item => item.gameNumber === game.gameNumber
+      ? { ...item, firstPlayerSeat: seat }
+      : item),
+  };
+}
+
+export function activateSeriesGame(series: MatchSeriesState): MatchSeriesState {
+  if (series.status !== 'active') return series;
+  const game = series.games.find(item => item.gameNumber === series.currentGame);
+  if (!game || game.status !== 'setup') return series;
+  return {
+    ...series,
+    games: series.games.map(item => item.gameNumber === game.gameNumber ? { ...item, status: 'active' } : item),
+  };
+}
+
+export function recordSeriesGameWinner(
+  series: MatchSeriesState,
+  winnerTeam: TeamNumber,
+): MatchSeriesState {
+  if (series.status !== 'active') return series;
+  const game = series.games.find(item => item.gameNumber === series.currentGame);
+  if (!game || game.status === 'complete') return series;
+
+  const nextWins = (series.winsByTeam[winnerTeam] ?? 0) + 1;
+  const winsByTeam = { ...series.winsByTeam, [winnerTeam]: nextWins };
+  const completedGames = series.games.map(item => item.gameNumber === game.gameNumber
+    ? { ...item, status: 'complete' as const, winnerTeam }
+    : item);
+
+  if (nextWins >= series.winsNeeded) {
+    return { ...series, status: 'complete', winsByTeam, games: completedGames };
+  }
+
+  const nextGame = series.currentGame + 1;
+  return {
+    ...series,
+    currentGame: nextGame,
+    winsByTeam,
+    games: [...completedGames, {
+      gameNumber: nextGame,
+      status: 'setup',
+      selectionsBySeat: {},
+    }],
+  };
+}
+
 export function startRoom(room: RoomState, actor: string, force = false): RoomState {
   if (force ? !canForceStart(room, actor) : !(actor === room.ownerMemberId && canStart(room))) return room;
-  return { ...room, status: 'active', settingsLocked: true };
+  return {
+    ...room,
+    status: 'active',
+    settingsLocked: true,
+    series: room.series ?? createSeriesState(room.settings.bestOf),
+  };
 }
 
 export function appendChat(room: RoomState, message: ChatMessage): RoomState {
