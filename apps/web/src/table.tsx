@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, type CSSProperties } from 'react';
+import { CardInspector } from './card-inspector';
 import {
   applyAction,
   canManipulate,
@@ -22,6 +23,8 @@ export function Table() {
   const [table, setTable] = useState<TableState>(() => structuredClone(initialTable));
   const [viewer, setViewer] = useState<PlayerId>(1);
   const [selected, setSelected] = useState<string>('');
+  const [hovered, setHovered] = useState<string>('');
+  const [pinned, setPinned] = useState<string>('');
   const [stackTarget, setStackTarget] = useState<string>('');
   const [error, setError] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
@@ -29,6 +32,8 @@ export function Table() {
 
   const execute = (action: Parameters<typeof applyAction>[1]) => setTable(state => applyAction(state, action));
   const selectedCard = table.cards.find(card => card.id === selected);
+  const inspectorCard = table.cards.find(card => card.id === (hovered || pinned));
+  const inspectorPinned = Boolean(pinned && !hovered);
   const ownFieldCards = table.cards.filter(card => card.owner === viewer && card.zone === 'field' && card.id !== selected);
 
   const cardsByPlayer = useMemo(() => ({
@@ -111,7 +116,12 @@ export function Table() {
       aria-pressed={selected === card.id}
       className={`card ${selected === card.id ? 'selected' : ''} ${faceVisible ? '' : 'back'} ${owned ? '' : 'locked'}`}
       style={style}
-      onClick={() => { if (owned || mode === 'field') setSelected(card.id); }}
+      onMouseEnter={() => setHovered(card.id)}
+      onMouseLeave={() => setHovered('')}
+      onClick={() => {
+        if (owned || mode === 'field') setSelected(card.id);
+        setPinned(card.id);
+      }}
       onDoubleClick={() => { if (owned && mode === 'hand') execute({ type: 'to-zone', id: card.id, zone: 'field', actor: viewer }); }}
       onPointerDown={event => {
         if (!owned || mode !== 'field' || event.button !== 0) return;
@@ -200,10 +210,15 @@ export function Table() {
 
     {error && <p className="error" role="alert">{error}</p>}
 
-    <div className="board" ref={boardRef} aria-label="RB Unbound tabletop board">
-      <div className="midline"><span>SHARED FIELD</span></div>
-      {renderPlayer(2)}
-      {renderPlayer(1)}
+    <div className="play-area">
+      <CardInspector card={inspectorCard} pinned={inspectorPinned} onClear={() => setPinned('')} />
+      <div className="board" ref={boardRef} aria-label="RB Unbound tabletop board" onClick={event => {
+        if (event.currentTarget === event.target) setPinned('');
+      }}>
+        <div className="midline"><span>SHARED FIELD</span></div>
+        {renderPlayer(2)}
+        {renderPlayer(1)}
+      </div>
     </div>
 
     <footer>
