@@ -1,0 +1,16 @@
+{
+  "name": "rb-unbound",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/web",
+    "packages/tabletop",
+    "server"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @rb-unbound/web",
+    "build": "npm run build -w @rb-unbound/tabletop && npm run build -w @rb-unbound/web && npm run build -w @rb-unbound/server",
+    "check": "npm run check -w @rb-unbound/tabletop && npm run check -w @rb-unbound/web && npm run check -w @rb-unbound/server",
+    "dev:server": "npm run dev -w @rb-unbound/server"
+  }
+}
