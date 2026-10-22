@@ -7,6 +7,8 @@ export type TeamNumber = 1 | 2 | 3 | 4;
 export type RoomSettings = {
   roomName: string;
   format: MatchFormat;
+  moduleId: string;
+  moduleVersion: string;
   ruleset: RulesetPreset;
   isPublic: boolean;
   allowSpectators: boolean;
@@ -60,6 +62,8 @@ export function createRoom(code: string, ownerMemberId: string, ownerName: strin
   const defaults: RoomSettings = {
     roomName: `${ownerName}'s room`,
     format,
+    moduleId: 'generic-duel',
+    moduleVersion: '1.0.0',
     ruleset: 'standard',
     isPublic: false,
     allowSpectators: true,
