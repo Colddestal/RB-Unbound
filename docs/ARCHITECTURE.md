@@ -133,3 +133,16 @@ A module definition is data, not code. Version 1 does **not** allow:
 Future game-specific automation, where legally and technically appropriate, must live behind a separate explicitly reviewed rules-engine interface. The base module format remains portable, inspectable and safe to validate before use.
 
 The built-in `generic-duel` module is original placeholder content used to prove the schema without incorporating third-party game assets or rules.
+
+
+## Module-driven tabletop presentation
+
+The local tabletop can now switch between built-in game modules without changing the core tabletop implementation. The active module supplies zone labels and card-back presentation descriptors.
+
+The first two built-in original modules are:
+- `generic-duel`
+- `frontier-skirmish`
+
+For this stage, the underlying tabletop state still uses the core zone identifiers `deck`, `hand`, `field`, and `discard`. Modules map presentation onto those core zone kinds rather than redefining serialized card state. This intentionally separates UI/module proof from a larger state-schema migration.
+
+The next expansion can move module-defined placement/layout hints deeper into board rendering and later generalize custom zones once the migration path is clear.
