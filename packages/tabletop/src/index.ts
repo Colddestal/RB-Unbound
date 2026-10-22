@@ -246,3 +246,5 @@ export function migrateTableState(value: unknown): TableState | null {
 }
 
 export * from './game-module.js';
+
+export * from './deck.js';
