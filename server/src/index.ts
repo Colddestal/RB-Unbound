@@ -345,7 +345,7 @@ function moduleZonePolicy(room: RoomState) {
       const capabilities = pileCapabilities(module, zone);
       if (!capabilities.drawToZoneId) return [];
       const destination = module.zones.find(candidate => candidate.id === capabilities.drawToZoneId);
-      const faceUp = destination?.visibility === 'public' || zoneBehavior(destination!) === 'hand';
+      const faceUp = destination ? (destination.visibility === 'public' || zoneBehavior(destination) === 'hand') : false;
       return [[zone.id, { toZone: capabilities.drawToZoneId, faceUp }] as const];
     })),
     shuffleZones: module.zones.filter(zone => pileCapabilities(module, zone).shuffle).map(zone => zone.id),
