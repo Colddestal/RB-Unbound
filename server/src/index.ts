@@ -48,8 +48,27 @@ function safeFormat(value: unknown): MatchFormat | undefined {
   return value === '1v1' || value === '2v2' || value === 'ffa4' ? value : undefined;
 }
 
+function publicRoom(room: RoomState) {
+  return {
+    code: room.code,
+    status: room.status,
+    settingsLocked: room.settingsLocked,
+    settings: room.settings,
+    seats: room.seats.map(seat => ({
+      seat: seat.seat,
+      displayName: seat.displayName,
+      team: seat.team,
+      ready: seat.ready,
+      occupied: Boolean(seat.memberId),
+      owner: seat.memberId === room.ownerMemberId,
+    })),
+    spectators: room.spectators.map(spectator => ({ displayName: spectator.displayName })),
+    chat: room.chat.map(({ memberId: _memberId, ...message }) => message),
+  };
+}
+
 function emitRoom(room: RoomState): void {
-  io.to(room.code).emit('room:update', room);
+  io.to(room.code).emit('room:update', publicRoom(room));
 }
 
 function fail(socket: Socket, message: string): void {
@@ -154,7 +173,12 @@ io.on('connection', socket => {
     if (typeof payload.isPublic === 'boolean') safePatch.isPublic = payload.isPublic;
     if (typeof payload.allowSpectators === 'boolean') safePatch.allowSpectators = payload.allowSpectators;
     if (typeof payload.readyCheck === 'boolean') safePatch.readyCheck = payload.readyCheck;
-    if (payload.turnTimerSeconds === null || (Number.isInteger(payload.turnTimerSeconds) && Number(payload.turnTimerSeconds) >= 15 && Number(payload.turnTimerSeconds) <= 3600)) {
+    if (payload.turnTimerSeconds === null || (
+      typeof payload.turnTimerSeconds === 'number' &&
+      Number.isInteger(payload.turnTimerSeconds) &&
+      payload.turnTimerSeconds >= 15 &&
+      payload.turnTimerSeconds <= 3600
+    )) {
       safePatch.turnTimerSeconds = payload.turnTimerSeconds;
     }
 
