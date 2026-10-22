@@ -296,7 +296,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       const position = zonePosition('discard', card.owner as 1 | 2);
       style.left = `${position.x / 10}%`;
       style.top = `${position.y / 6}%`;
-      style.transform = `translate(${index * 2}px,${index * 2}px) rotate(${card.rotation}deg)`;
+      style.transform = `translate(calc(-50% + ${index * 2}px),calc(-50% + ${index * 2}px)) rotate(${card.rotation}deg)`;
       style.zIndex = 8 + index;
     }
 
@@ -427,6 +427,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
             width: `${zoneFor('deck')!.size!.width / 10}%`,
             height: `${zoneFor('deck')!.size!.height / 6}%`,
           } : {}),
+          transform: 'translate(-50%,-50%)',
         }}
         onDraw={count => drawCards(player, count)}
         onShuffle={() => shuffleDeck(player)}
@@ -438,6 +439,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
           width: `${zoneFor('discard')!.size!.width / 10}%`,
           height: `${zoneFor('discard')!.size!.height / 6}%`,
         } : {}),
+        transform: 'translate(-50%,-50%)',
       }}><span>{zoneLabel('discard').toUpperCase()} · {discard.length}</span></div>
       {discard.slice(-6).map((card, index) => renderCard(card, index, discard, 'discard'))}
       {hand.map((card, index) => renderCard(card, index, hand, 'hand'))}
