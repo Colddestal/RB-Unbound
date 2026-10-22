@@ -683,7 +683,11 @@ io.on('connection', socket => {
     rooms.set(room.code, updated);
     matches.set(room.code, {
       revision: 0,
-      table: createInitialTableForModule(requiredSeats(room.settings.format), moduleForRoom(updated)),
+      table: createInitialTableForModule(
+        requiredSeats(room.settings.format),
+        packageForRoom(updated).module,
+        packageForRoom(updated).cards,
+      ),
       lastActionSequence: new Map(),
     });
     emitRoom(updated);
