@@ -146,3 +146,12 @@ The first two built-in original modules are:
 For this stage, the underlying tabletop state still uses the core zone identifiers `deck`, `hand`, `field`, and `discard`. Modules map presentation onto those core zone kinds rather than redefining serialized card state. This intentionally separates UI/module proof from a larger state-schema migration.
 
 The next expansion can move module-defined placement/layout hints deeper into board rendering and later generalize custom zones once the migration path is clear.
+
+
+## Module-driven board layout
+
+Game modules can now provide normalized board positions for owner-scoped zones using per-seat coordinates in the shared 1000×600 tabletop space. The local renderer consumes these positions for deck and discard placement instead of relying on fixed CSS classes.
+
+Modules may also define non-interactive custom zone markers with a default normalized position. These markers are presentation/layout hints only at this stage; they do not yet create new serialized card-zone kinds.
+
+This keeps the current saved-table schema stable while moving visual board layout into module data. A later state-schema migration can promote selected custom zones into fully interactive destinations once compatibility rules are defined.
