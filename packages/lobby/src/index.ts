@@ -11,6 +11,7 @@ export type RoomSettings = {
   isPublic: boolean;
   allowSpectators: boolean;
   readyCheck: boolean;
+  shareTeamHands: boolean;
   turnTimerSeconds: number | null;
   customRules: Record<string, boolean | number | string>;
 };
@@ -63,6 +64,7 @@ export function createRoom(code: string, ownerMemberId: string, ownerName: strin
     isPublic: false,
     allowSpectators: true,
     readyCheck: true,
+    shareTeamHands: false,
     turnTimerSeconds: null,
     customRules: {},
   };
@@ -82,7 +84,12 @@ export function setRoomSettings(room: RoomState, actor: string, patch: Partial<R
   const allowedSeats = requiredSeats(format);
   if (room.seats.some(seat => seat.memberId && !allowedSeats.includes(seat.seat))) return room;
 
-  const settings = { ...room.settings, ...patch, format };
+  const settings = {
+    ...room.settings,
+    ...patch,
+    format,
+    shareTeamHands: format === '2v2' ? (patch.shareTeamHands ?? room.settings.shareTeamHands) : false,
+  };
   return {
     ...room,
     settings,

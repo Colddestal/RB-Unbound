@@ -98,3 +98,10 @@ The raw invite code is sent only to the room owner and cached locally by that ow
 Changing a public lobby to private generates a new invite code. Changing a private lobby to public removes the stored invite requirement. Reconnect sessions already authorized for a room do not need to resubmit an invite code.
 
 "Public" does not yet imply room discovery; a public room browser is a separate future feature.
+
+
+## 2v2 team-aware visibility
+
+Team-private information is configurable rather than assumed. In 2v2 rooms the host may enable **Share teammate hands** before the match starts. When enabled, each player receives card identities for their own hand and their teammate's hand; the teammate hand is rendered read-only and cannot be manipulated by the other player.
+
+Opponents never receive those private hand identities, spectators receive no private hands, and deck identities/order remain server-only regardless of the sharing setting. The setting is disabled automatically outside 2v2 formats.

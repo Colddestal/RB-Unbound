@@ -161,7 +161,8 @@ export function applyAction(state: TableState, action: TableAction): TableState 
   };
 }
 
-export function projectTable(state: TableState, viewer?: PlayerId): TableView {
+export function projectTable(state: TableState, viewer?: PlayerId, visibleHandOwners?: PlayerId[]): TableView {
+  const privateHandOwners = new Set<PlayerId>(visibleHandOwners ?? (viewer ? [viewer] : []));
   const hidden = ([1, 2, 3, 4] as PlayerId[])
     .map(owner => ({
       owner,
@@ -172,11 +173,12 @@ export function projectTable(state: TableState, viewer?: PlayerId): TableView {
 
   const cards: PublicCard[] = [];
   for (const card of state.cards) {
-    const ownHand = viewer === card.owner && card.zone === 'hand';
+    const visiblePrivateHand = card.zone === 'hand' && privateHandOwners.has(card.owner);
     const publicZone = card.zone === 'field' || card.zone === 'discard';
-    if (!ownHand && !publicZone) continue;
+    if (!visiblePrivateHand && !publicZone) continue;
 
-    const hideIdentity = viewer !== card.owner && !card.faceUp;
+    const privateIdentityVisible = privateHandOwners.has(card.owner);
+    const hideIdentity = !privateIdentityVisible && !card.faceUp;
     cards.push({
       ...card,
       id: hideIdentity ? `hidden-${card.owner}-${card.zone}-${card.order}` : card.id,
