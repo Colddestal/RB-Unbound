@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { TabletopDock, type DockHistoryEntry } from './tabletop-dock';
 import { DeckTools } from './deck-tools';
 import { DeckPile } from './deck-pile';
+import { localHandDropRect, pointInRect } from './drag-drop';
 import { toCanonicalPoint, toViewerPoint, toViewerSeat } from './board-perspective';
 import { actionForCode, displayKey, type KeyBindings } from './controls';
 import {
@@ -68,6 +69,8 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
   const [stackTarget, setStackTarget] = useState<string>('');
   const [error, setError] = useState('');
   const [history, setHistory] = useState<DockHistoryEntry[]>([]);
+  const [dragPreview, setDragPreview] = useState<{ id: string; label: string; x: number; y: number } | null>(null);
+  const [fieldDragId, setFieldDragId] = useState('');
   const historyCounterRef = useRef(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
@@ -325,11 +328,21 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
         handDragRef.current = mode === 'hand'
           ? { id: card.id, startX: event.clientX, startY: event.clientY }
           : null;
+        if (mode === 'hand') {
+          setDragPreview({ id: card.id, label: card.label, x: event.clientX, y: event.clientY });
+        } else {
+          setFieldDragId(card.id);
+        }
       }}
       onPointerMove={event => {
-        if (!owned || mode !== 'field' || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+        if (!owned || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+        if (mode === 'hand' && handDragRef.current?.id === card.id) {
+          setDragPreview({ id: card.id, label: card.label, x: event.clientX, y: event.clientY });
+          return;
+        }
+        if (mode !== 'field') return;
         const rect = boardRef.current?.getBoundingClientRect();
-        if (!rect) return;
+        if (!rect || !pointInRect({ x: event.clientX, y: event.clientY }, rect)) return;
         const point = toCanonicalPoint({
           x: ((event.clientX - rect.left - 43) / rect.width) * 1000,
           y: ((event.clientY - rect.top - 58) / rect.height) * 600,
@@ -344,13 +357,12 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       }}
       onPointerUp={event => {
         if (!owned || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+        const rect = boardRef.current?.getBoundingClientRect();
+
         if (mode === 'hand' && handDragRef.current?.id === card.id) {
           const drag = handDragRef.current;
           const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
-          const rect = boardRef.current?.getBoundingClientRect();
-          if (rect && distance > 6 &&
-            event.clientX >= rect.left && event.clientX <= rect.right &&
-            event.clientY >= rect.top && event.clientY <= rect.bottom) {
+          if (rect && distance > 6 && pointInRect({ x: event.clientX, y: event.clientY }, rect)) {
             execute({ type: 'to-zone', id: card.id, zone: 'field', actor: viewer });
             addLocalHistory(`Player ${viewer} played a card to ${zoneLabel('field')} face-down.`);
             const point = toCanonicalPoint({
@@ -365,8 +377,14 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
               y: point.y,
             });
           }
+        } else if (mode === 'field' && rect && pointInRect({ x: event.clientX, y: event.clientY }, localHandDropRect(rect))) {
+          execute({ type: 'to-zone', id: card.id, zone: 'hand', actor: viewer });
+          addLocalHistory(`Player ${viewer} returned a card to their hand.`);
         }
+
         handDragRef.current = null;
+        setDragPreview(null);
+        setFieldDragId('');
         event.currentTarget.releasePointerCapture(event.pointerId);
       }}
     >
@@ -566,6 +584,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
             </div>];
           });
         })}
+        {fieldDragId && <div className="local-hand-drop-zone active">Drop here to return to hand</div>}
         {selectionBox && <div className="selection-box" style={{
           left: Math.min(selectionBox.startX, selectionBox.endX),
           top: Math.min(selectionBox.startY, selectionBox.endY),
@@ -576,6 +595,15 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
         {renderPlayer(1)}
       </div>
     </div>
+
+    {dragPreview && <div
+      className="drag-card-ghost"
+      style={{ left: dragPreview.x - 43, top: dragPreview.y - 58 }}
+      aria-hidden="true"
+    >
+      <span className="card-symbol">✦</span>
+      <span>{dragPreview.label}</span>
+    </div>}
 
     <DeckTools module={activeModule} catalog={activePackage.cards} onLoadDeck={loadDeckForPlayerOne} />
 
