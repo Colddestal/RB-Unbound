@@ -5,14 +5,14 @@ import { actionForCode, displayKey, type KeyBindings } from './controls';
 import {
   applyAction,
   canManipulate,
-  builtInCardCatalog,
-  builtInGameModules,
+  builtInModulePackages,
   genericDuelModule,
   initialTable,
   migrateTableState,
   type Card,
   type DeckDefinition,
   type GameModule,
+  type ModulePackage,
   type PlayerId,
   type TableState,
 } from '@rb-unbound/tabletop';
@@ -26,9 +26,10 @@ function shuffled<T>(items: T[]): T[] {
   return copy;
 }
 
-export function Table({ bindings }: { bindings: KeyBindings }) {
+export function Table({ bindings, modulePackages }: { bindings: KeyBindings; modulePackages: ModulePackage[] }) {
   const [moduleId, setModuleId] = useState(genericDuelModule.id);
-  const activeModule = builtInGameModules.find(module => module.id === moduleId) ?? genericDuelModule;
+  const activePackage = modulePackages.find(bundle => bundle.module.id === moduleId) ?? builtInModulePackages[0];
+  const activeModule = activePackage.module;
   const zoneFor = (kind: Card['zone']) => activeModule.zones.find(zone => zone.kind === kind);
   const zoneLabel = (kind: Card['zone']) => zoneFor(kind)?.label ?? kind;
   const cardBack = activeModule.cardBacks[0];
@@ -105,9 +106,7 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
       setError('That deck does not match the active module.');
       return;
     }
-    const catalog = new Map(builtInCardCatalog
-      .filter(card => card.moduleId === activeModule.id && card.moduleVersion === activeModule.version)
-      .map(card => [card.id, card]));
+    const catalog = new Map(activePackage.cards.map(card => [card.id, card]));
     const cards = deck.cards.map((definitionId, index) => {
       const definition = catalog.get(definitionId);
       if (!definition) return null;
@@ -327,7 +326,10 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
       <strong>Local player view</strong>
       <label className="module-picker">Module
         <select value={moduleId} onChange={e => setModuleId(e.target.value)}>
-          {builtInGameModules.map((module: GameModule) => <option key={module.id} value={module.id}>{module.name}</option>)}
+          {modulePackages.map(bundle => {
+            const module: GameModule = bundle.module;
+            return <option key={`${module.id}@${module.version}`} value={module.id}>{module.name} · v{module.version}</option>;
+          })}
         </select>
       </label>
       <button className={viewer === 1 ? 'active' : ''} onClick={() => { setViewer(1); setSelected(''); }}>Player 1</button>
@@ -379,7 +381,7 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
     {error && <p className="error" role="alert">{error}</p>}
 
     <div className="play-area">
-      <CardInspector card={inspectorCard} pinned={inspectorPinned} onClear={() => setPinned('')} module={activeModule} />
+      <CardInspector card={inspectorCard} pinned={inspectorPinned} onClear={() => setPinned('')} module={activeModule} catalog={activePackage.cards} />
       <div
         className="board"
         ref={boardRef}
@@ -445,7 +447,7 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
       </div>
     </div>
 
-    <DeckTools module={activeModule} onLoadDeck={loadDeckForPlayerOne} />
+    <DeckTools module={activeModule} catalog={activePackage.cards} onLoadDeck={loadDeckForPlayerOne} />
 
     <footer>
       {activeModule.description} · Draw from your {zoneLabel('deck').toLowerCase()} · Double-click a {zoneLabel('hand').toLowerCase()} card to play it · Drag your {zoneLabel('field').toLowerCase()} cards.
