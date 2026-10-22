@@ -582,12 +582,15 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
             const right = Math.max(selectionBox.startX, selectionBox.endX);
             const top = Math.min(selectionBox.startY, selectionBox.endY);
             const bottom = Math.max(selectionBox.startY, selectionBox.endY);
+            const renderedCard = event.currentTarget.querySelector<HTMLElement>('.card');
+            const cardHalfWidth = (renderedCard?.offsetWidth ?? 64) / 2;
+            const cardHalfHeight = (renderedCard?.offsetHeight ?? 88) / 2;
             const ids = fieldCards
               .filter(card => card.owner === identity.seat)
               .filter(card => {
                 const point = toViewerPoint({ x: card.x, y: card.y }, perspectiveViewer, room.settings.format);
-                const cx = (point.x / 1000) * rect.width + 43;
-                const cy = (point.y / 600) * rect.height + 58;
+                const cx = (point.x / 1000) * rect.width + cardHalfWidth;
+                const cy = (point.y / 600) * rect.height + cardHalfHeight;
                 return cx >= left && cx <= right && cy >= top && cy <= bottom;
               })
               .map(card => card.id);
