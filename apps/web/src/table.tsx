@@ -9,6 +9,7 @@ import {
   genericDuelModule,
   initialTable,
   migrateTableState,
+  modulePackageKey,
   type Card,
   type DeckDefinition,
   type GameModule,
@@ -27,8 +28,8 @@ function shuffled<T>(items: T[]): T[] {
 }
 
 export function Table({ bindings, modulePackages }: { bindings: KeyBindings; modulePackages: ModulePackage[] }) {
-  const [moduleId, setModuleId] = useState(genericDuelModule.id);
-  const activePackage = modulePackages.find(bundle => bundle.module.id === moduleId) ?? builtInModulePackages[0];
+  const [moduleKey, setModuleKey] = useState(modulePackageKey(genericDuelModule));
+  const activePackage = modulePackages.find(bundle => modulePackageKey(bundle.module) === moduleKey) ?? builtInModulePackages[0];
   const activeModule = activePackage.module;
   const zoneFor = (kind: Card['zone']) => activeModule.zones.find(zone => zone.kind === kind);
   const zoneLabel = (kind: Card['zone']) => zoneFor(kind)?.label ?? kind;
@@ -325,10 +326,10 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
     <section className="viewer-bar">
       <strong>Local player view</strong>
       <label className="module-picker">Module
-        <select value={moduleId} onChange={e => setModuleId(e.target.value)}>
+        <select value={modulePackageKey(activeModule)} onChange={e => setModuleKey(e.target.value)}>
           {modulePackages.map(bundle => {
             const module: GameModule = bundle.module;
-            return <option key={`${module.id}@${module.version}`} value={module.id}>{module.name} · v{module.version}</option>;
+            return <option key={modulePackageKey(module)} value={modulePackageKey(module)}>{module.name} · v{module.version}</option>;
           })}
         </select>
       </label>
