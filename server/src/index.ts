@@ -33,7 +33,10 @@ const httpServer = createServer((_req, res) => {
 });
 
 const io = new Server(httpServer, {
-  cors: { origin: false },
+  cors: {
+    origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+    methods: ['GET', 'POST'],
+  },
   maxHttpBufferSize: 20_000,
   serveClient: false,
 });
@@ -184,6 +187,7 @@ io.on('connection', socket => {
     socketRoom.set(socket.id, room.code);
     socket.join(room.code);
     socket.emit('room:created', { code: room.code });
+    socket.emit('room:identity', { code: room.code, seat: 1, spectator: false });
     emitRoom(room);
   });
 
@@ -202,6 +206,7 @@ io.on('connection', socket => {
     rooms.set(roomCode, updated);
     socketRoom.set(socket.id, roomCode);
     socket.join(roomCode);
+    socket.emit('room:identity', { code: roomCode, seat, spectator: false });
     emitRoom(updated);
   });
 
@@ -219,6 +224,7 @@ io.on('connection', socket => {
     rooms.set(roomCode, updated);
     socketRoom.set(socket.id, roomCode);
     socket.join(roomCode);
+    socket.emit('room:identity', { code: roomCode, spectator: true });
     emitRoom(updated);
     if (updated.status === 'active') emitMatchViews(updated);
   });
