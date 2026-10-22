@@ -27,6 +27,9 @@ export type ModuleZoneDefinition = {
   pile?: {
     drawToZoneId?: string;
     shuffle?: boolean;
+    /** Optional placeholder cards to seed into this pile for prototype/demo modules. */
+    initialCount?: number;
+    initialLabel?: string;
   };
   stackable?: boolean;
   defaultPosition?: {
@@ -111,6 +114,8 @@ export function isGameModule(value: unknown): value is GameModule {
       if (zoneBehavior(zone) !== 'pile') return false;
       if (zone.pile.drawToZoneId !== undefined && !validId(zone.pile.drawToZoneId)) return false;
       if (zone.pile.shuffle !== undefined && typeof zone.pile.shuffle !== 'boolean') return false;
+      if (zone.pile.initialCount !== undefined && (!Number.isInteger(zone.pile.initialCount) || zone.pile.initialCount < 0 || zone.pile.initialCount > 100)) return false;
+      if (zone.pile.initialLabel !== undefined && (typeof zone.pile.initialLabel !== 'string' || zone.pile.initialLabel.length < 1 || zone.pile.initialLabel.length > 80)) return false;
     }
     if (zone.stackable !== undefined && typeof zone.stackable !== 'boolean') return false;
     if (zone.defaultPosition) {
@@ -298,12 +303,12 @@ export const frontierSkirmishModule: GameModule = {
     },
     {
       id: 'resources',
-      label: 'Resources',
+      label: 'Runes',
       kind: 'custom',
       visibility: 'public',
       ownerScoped: true,
       behavior: 'area',
-      role: 'resources',
+      role: 'runes',
       seatPositions: {
         '1': { x: 500, y: 485 },
         '2': { x: 500, y: 115 },
@@ -312,12 +317,12 @@ export const frontierSkirmishModule: GameModule = {
     },
     {
       id: 'commander',
-      label: 'Leader',
+      label: 'Legend',
       kind: 'custom',
       visibility: 'public',
       ownerScoped: true,
       behavior: 'slot',
-      role: 'leader',
+      role: 'legend',
       capacity: 1,
       seatPositions: {
         '1': { x: 925, y: 515 },
@@ -342,13 +347,13 @@ export const frontierSkirmishModule: GameModule = {
     },
     {
       id: 'resource-deck',
-      label: 'Resource Deck',
+      label: 'Rune Deck',
       kind: 'custom',
       visibility: 'hidden',
       ownerScoped: true,
       behavior: 'pile',
-      role: 'resource-deck',
-      pile: { drawToZoneId: 'resources', shuffle: true },
+      role: 'rune-deck',
+      pile: { drawToZoneId: 'resources', shuffle: true, initialCount: 12, initialLabel: 'Rune' },
       seatPositions: {
         '1': { x: 75, y: 390 },
         '2': { x: 75, y: 50 },
