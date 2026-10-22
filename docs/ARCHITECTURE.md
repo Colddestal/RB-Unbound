@@ -62,3 +62,12 @@ Disconnected lobby sessions are retained for a limited recovery window. Active-m
 Match actions carry a monotonically increasing per-member sequence number. The server records the last accepted sequence and rejects duplicate or out-of-order actions while continuing to serialize all room state changes on the authoritative server. Match updates include a server revision counter for diagnostics and later persistence/replay work.
 
 Reconnect does not yet survive a server restart because room, match and session state are still in memory.
+
+
+## Development persistence and restart recovery
+
+The development multiplayer server now writes atomic snapshots to `.data/server-state.json` by default (configurable with `RB_UNBOUND_STATE_PATH`). Room state, canonical match state, action sequence history and resumable session metadata are restored on server startup.
+
+Reconnect credentials are not stored in plaintext. The browser keeps the opaque raw token while the server persists only its SHA-256 hash. After a restart, presenting the same raw token allows the server to hash it again and locate the restored session.
+
+Snapshots are written through a temporary file followed by an atomic rename, are excluded from Git, and are flushed on SIGINT/SIGTERM. This file-backed store is intentionally a development durability layer, not the planned production database. Production hosting will move durable state to a database and add backups, migrations, expiration policies and multi-instance coordination.
