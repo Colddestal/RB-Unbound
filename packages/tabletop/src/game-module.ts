@@ -227,7 +227,7 @@ export const frontierSkirmishModule: GameModule = {
   schemaVersion: 1,
   id: 'frontier-skirmish',
   name: 'Frontier Skirmish',
-  version: '1.1.0',
+  version: '1.0.0',
   description: 'Original location-based proof module with a wide mirrored mat, two objectives, player bases, separate resource/main piles and dedicated leader slots.',
   supportedFormats: ['1v1', '2v2'],
   zones: [
