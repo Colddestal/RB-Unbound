@@ -21,6 +21,8 @@ export type ModuleZoneDefinition = {
   parentZoneId?: string;
   /** Optional hard capacity hint. A slot must have capacity 1. */
   capacity?: number;
+  /** Optional additional visual copies for one underlying shared zone/card. */
+  displayCopies?: Array<{ x: number; y: number }>;
   /** Declarative pile interactions. Only valid on pile behavior zones. */
   pile?: {
     drawToZoneId?: string;
@@ -95,6 +97,14 @@ export function isGameModule(value: unknown): value is GameModule {
     if (zone.parentZoneId !== undefined && !validId(zone.parentZoneId)) return false;
     if (zone.parentZoneId === zone.id) return false;
     if (zone.capacity !== undefined && (!Number.isInteger(zone.capacity) || zone.capacity < 1 || zone.capacity > 500)) return false;
+    if (zone.displayCopies !== undefined) {
+      if (!Array.isArray(zone.displayCopies) || zone.displayCopies.length < 1 || zone.displayCopies.length > 8) return false;
+      if (!zone.displayCopies.every(point =>
+        point && typeof point === 'object' &&
+        Number.isFinite(point.x) && Number.isFinite(point.y) &&
+        point.x >= 0 && point.x <= 1000 &&
+        point.y >= 0 && point.y <= 600)) return false;
+    }
     if (zone.behavior === 'slot' && zone.capacity !== undefined && zone.capacity !== 1) return false;
     if (zone.behavior === 'subzone' && !zone.parentZoneId) return false;
     if (zone.pile !== undefined) {
@@ -369,7 +379,11 @@ export const frontierSkirmishModule: GameModule = {
       role: 'objective',
       capacity: 1,
       defaultPosition: { x: 285, y: 300 },
-      size: { width: 132, height: 104 },
+      displayCopies: [
+        { x: 285, y: 245 },
+        { x: 285, y: 355 },
+      ],
+      size: { width: 96, height: 68 },
     },
     {
       id: 'objective-b',
@@ -381,7 +395,11 @@ export const frontierSkirmishModule: GameModule = {
       role: 'objective',
       capacity: 1,
       defaultPosition: { x: 715, y: 300 },
-      size: { width: 132, height: 88 },
+      displayCopies: [
+        { x: 715, y: 245 },
+        { x: 715, y: 355 },
+      ],
+      size: { width: 96, height: 68 },
     },
     {
       id: 'objective-a-hidden',
