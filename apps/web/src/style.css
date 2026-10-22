@@ -15,7 +15,7 @@ a{color:#9de9dd}
 .viewer-bar button:hover,.toolbar button:hover:not(:disabled),.filebar button:hover{background:#2b4964}
 .viewer-bar button.active{background:#2d665d;border-color:#66c7b5;box-shadow:0 0 0 1px #66c7b544 inset}
 .chip{border:1px solid #3b695f;color:#92d7c5;border-radius:20px;padding:6px 10px;font-size:12px}
-.board{height:min(70vw,720px);min-height:560px;position:relative;overflow:hidden;background:
+.board{width:100%;height:auto;aspect-ratio:16/9;min-height:520px;position:relative;overflow:hidden;background:
   radial-gradient(circle at center,#315b59 0,#244648 30%,transparent 31%),
   linear-gradient(180deg,#23374c 0%,#223d45 48%,#18363d 52%,#213448 100%);
   border:2px solid #456675;border-radius:18px;box-shadow:0 22px 60px #0008,inset 0 0 80px #0003}
@@ -153,3 +153,10 @@ button:focus-visible,select:focus-visible,input:focus-visible,.card:focus-visibl
 .card,.mini-card{touch-action:none;user-select:none}
 .card{cursor:grab}
 .card:active,.mini-card:active{cursor:grabbing}
+
+.module-zone-area{position:absolute;transform:translate(-50%,-50%);display:grid;place-content:center;gap:4px;box-sizing:border-box;border:1px solid #8aa6ad66;border-radius:12px;background:#0d1b2799;color:#a9c3c8;text-align:center;pointer-events:none;z-index:1;box-shadow:inset 0 0 28px #0003}
+.module-zone-area strong{font-size:10px;letter-spacing:2px;text-transform:uppercase}
+.module-zone-area span{font-size:9px;color:#78939b}
+.module-zone-field{border:2px solid #9bb5b966;background:#24464a40;box-shadow:inset 0 0 55px #4d888522}
+.module-zone-field strong{font-size:12px;letter-spacing:4px;color:#c9dcdeaa}
+.module-zone-deck,.module-zone-discard{border-style:dashed}
