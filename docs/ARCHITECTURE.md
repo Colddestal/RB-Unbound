@@ -218,3 +218,12 @@ Custom module uploads are bounded by Socket.IO and per-event payload limits and 
 ### Trust boundary
 
 Module packages contain data only. Installing or joining a room with a package does not grant code execution, filesystem access, network access, dynamic imports, DOM access or automatic rules execution.
+
+
+## Mirrored player perspective and mat geometry
+
+The 1v1 renderer now presents the local player at the bottom of the tabletop. Seat 2 receives a 180-degree board-coordinate transform for presentation and pointer input, while individual visible cards remain upright except for their explicit 90-degree tapped state.
+
+Game modules may define optional normalized zone sizes in addition to positions. The renderer uses these dimensions to draw mat-style areas behind cards. Owner-scoped areas can provide separate seat positions, allowing the opponent's half of a mat to be a mirrored arrangement while shared areas such as a battlefield remain centered.
+
+The original Frontier Skirmish module demonstrates a wide tabletop with a dominant shared Battlefield plus mirrored Base, Resources, Commander, Vanguard, Deck, Resource Deck and Discard areas. This is an original structural test layout and does not include third-party branding, artwork or a licensed Riftbound module. An authorized game-specific module can map the same generic geometry system to its own exact zones later.
