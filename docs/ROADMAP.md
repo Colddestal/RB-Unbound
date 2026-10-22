@@ -14,8 +14,8 @@
 - [x] Drag, flip, rotate placeholder cards
 - [x] Save/export and import tabletop state as JSON
 - [ ] Add decks, hands, discard piles, shuffle, card stacks, and ownership controls
-- [ ] Accessibility, keyboard interaction, automated UI tests
-- [ ] Responsive board and touch input
+- [ ] Accessibility, PC keyboard interaction, automated UI tests
+- [ ] Polish desktop board layout and mouse interactions
 
 ## Phase 2 — Multiplayer
 - [x] Isolated Socket.IO relay starter (experimental; not yet connected to the UI)
