@@ -41,10 +41,10 @@ describe('built-in module rendering data', () => {
       label: 'Base',
       behavior: 'location',
       ownerScoped: true,
-      size: { width: 590, height: 70 },
+      size: { width: 600, height: 80 },
       seatPositions: {
-        '1': { x: 500, y: 425 },
-        '2': { x: 500, y: 175 },
+        '1': { x: 500, y: 410 },
+        '2': { x: 500, y: 190 },
       },
     });
   });
@@ -59,7 +59,7 @@ describe('built-in module rendering data', () => {
       role: 'combat-area',
       ownerScoped: false,
       defaultPosition: { x: 500, y: 300 },
-      size: { width: 780, height: 160 },
+      size: { width: 780, height: 138 },
     });
     expect(objectiveA).toMatchObject({
       behavior: 'slot',
