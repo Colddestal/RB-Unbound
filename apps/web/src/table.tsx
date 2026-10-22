@@ -637,7 +637,14 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
     <section className="filebar">
       <button onClick={save}>Export table</button>
       <button onClick={() => fileRef.current?.click()}>Import table</button>
-      <button onClick={() => { execute({ type: 'reset' }); setSelected(''); addLocalHistory('Reset the local table.'); }}>Reset</button>
+      <button onClick={() => {
+        setTable(createInitialTableForModule([1, 2], activeModule, activePackage.cards));
+        setSelected('');
+        setMultiSelected([]);
+        setPinned('');
+        setStackTarget('');
+        addLocalHistory('Reset the local table.');
+      }}>Reset</button>
       <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={e => { void load(e.target.files?.[0]); e.target.value = ''; }} />
       <span className="chip">Manual rules · Local sandbox</span>
     </section>
