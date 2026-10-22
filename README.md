@@ -1,59 +1,61 @@
 # RB Unbound
 
-**Developed by Project Poor**
+**Developed by Project Poor** · Founded by [Colddestal](https://github.com/Colddestal)
 
 *All the cards. None of the cost.*
 
-**Project Founder:** [Colddestal](https://github.com/Colddestal
+RB Unbound is an early-stage, free, community-oriented **general-purpose digital tabletop** project. It is designed to support multiple tabletop/card games using configurable layouts and game modules, not only Riftbound. Players will manipulate pieces and resolve rules themselves.
 
-## About
+## Current direction
 
-RB Unbound is a community-driven, free-to-play digital card game simulator project inspired by the accessibility of platforms such as Project Ignis (EDOPro).
+- **Manual-first:** move, rotate, flip, shuffle, and organize cards without automated game-rule enforcement.
+- **Two clients, one UI:** browser first; a Tauri desktop wrapper is planned.
+- **Online multiplayer:** private rooms and server-synchronized tables are planned; the local prototype works without an account.
+- **Game-neutral:** no copyrighted card assets or proprietary rules are bundled. A sample prototype module is included.
+- **Automation later:** a generic, optional rule engine may be developed for original/authorized game modules. Automated Riftbound gameplay will not be implemented or distributed without express Riot authorization.
 
-Our goal is to create an accessible environment where players can build decks, test strategies, and enjoy multiplayer card games without financial barriers.
+## Getting started
 
-The project is currently in its early planning and development stages.
+Requires Node.js 20.19+ or 22.12+ and npm.
 
-## Planned Features
+```bash
+npm install
+npm run dev
+```
 
-- Browser-based gameplay
-- Downloadable desktop application
-- Shared multiplayer infrastructure
-- Private and public casual lobbies
-- Deck-building and deck management
-- Automated rules engine
-- Spectator mode and replay support
-- Optional community donations
-- No paywalls or paid gameplay advantages
+Open the Vite URL shown in the terminal. The current prototype runs **locally only**: draggable, rotatable, flippable placeholder cards and JSON table export/import. Online multiplayer is a planned milestone, not a shipped feature.
 
-## Technology
+To run the optional experimental Socket.IO relay (not yet connected to the UI):
 
-| Component | Planned Technology |
-|---|---|
-| Web Client | React / TypeScript |
-| Desktop Client | Tauri |
-| Game Engine | C# / .NET |
-| Multiplayer | ASP.NET Core / SignalR |
-| Database | PostgreSQL |
+```bash
+npm run dev:server
+```
 
-## Development Status
+## Structure
 
-**Phase 1 — Planning and Core Architecture**
+- `apps/web` — React + TypeScript interface and manual tabletop prototype
+- `apps/desktop` — future Tauri wrapper
+- `packages/tabletop` — shared state and tabletop action contracts
+- `server` — early multiplayer transport spike
+- `docs/ROADMAP.md` — development plan and authorization gates
+- `docs/ARCHITECTURE.md` — technical design, security and scope
 
-The initial development work will focus on a generic card-game engine using original placeholder cards and rules.
+## Community and donations
 
-Riftbound-specific automated gameplay and distribution are contingent upon explicit authorization from Riot Games.
+We intend to keep the experience free. No paywalls, paid gameplay advantages, or in-game purchases are planned. Any donations and public distribution involving third-party game IP are subject to the applicable permissions and policies.
 
-## Community
+## Riot / Riftbound authorization
 
-RB Unbound is intended to be free and community-driven. Contributions and feedback will be welcome as the project develops.
+Project Poor has submitted a Riot Developer Portal application for review. **URL verification and application submission do not constitute authorization.** Riot's published policy currently does not approve automated Riftbound gameplay or standalone Riftbound-only clients. Any Riftbound-specific integration, card data, artwork, branding, or public distribution requires an appropriate review of Riot's terms and permissions. No Riot-owned assets are included in this repository.
 
-## Disclaimer
+## Status
 
-RB Unbound is an independent, unofficial project and is not affiliated with, sponsored by, or endorsed by Riot Games.
-
-No Riot Games artwork or proprietary card content is included in the initial prototype.
+Alpha foundation: original placeholder tabletop interface and TypeScript workspace. Not production-ready. No account system or public multiplayer has been released.
 
 ## License
 
-A software license has not yet been selected.
+**Not selected yet.** Until a license is chosen, this repository does not grant general permission to reuse its code. Third-party assets would require separate rights regardless of future software license.
+
+## Disclaimer
+
+Independent, unofficial community project; not affiliated with, endorsed by, or sponsored by Riot Games.
