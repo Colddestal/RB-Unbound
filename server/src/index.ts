@@ -18,11 +18,13 @@ import {
 } from '@rb-unbound/lobby';
 import {
   applyAction,
-  createInitialTable,
+  builtInGameModules,
+  createInitialTableForModule,
   genericDuelModule,
   isClientTableAction,
   projectTable,
   type ClientTableAction,
+  type GameModule,
   type PlayerId,
   type TableAction,
   type TableState,
@@ -150,6 +152,20 @@ function safeName(value: unknown): string | null {
 
 function safeFormat(value: unknown): MatchFormat | undefined {
   return value === '1v1' || value === '2v2' || value === 'ffa4' ? value : undefined;
+}
+
+function findModule(moduleId: unknown, moduleVersion?: unknown): GameModule | undefined {
+  if (typeof moduleId !== 'string') return undefined;
+  return builtInGameModules.find(module =>
+    module.id === moduleId && (moduleVersion === undefined || module.version === moduleVersion));
+}
+
+function moduleForRoom(room: RoomState): GameModule {
+  return findModule(room.settings.moduleId, room.settings.moduleVersion) ?? genericDuelModule;
+}
+
+function moduleSupportsFormat(module: GameModule, format: MatchFormat): boolean {
+  return module.supportedFormats.includes(format);
 }
 
 function rateIdentity(socket: Socket): string {
@@ -280,18 +296,20 @@ function visibleHandsForSeat(room: RoomState, seatNumber: PlayerId): PlayerId[] 
   return visible;
 }
 
-function moduleZonePolicy() {
+function moduleZonePolicy(room: RoomState) {
+  const module = moduleForRoom(room);
   return {
-    allowedZones: genericDuelModule.zones.map(zone => zone.id),
-    stackableZones: genericDuelModule.zones.filter(zone => zone.stackable).map(zone => zone.id),
-    publicZones: genericDuelModule.zones.filter(zone => zone.visibility === 'public').map(zone => zone.id),
+    module,
+    allowedZones: module.zones.map(zone => zone.id),
+    stackableZones: module.zones.filter(zone => zone.stackable).map(zone => zone.id),
+    publicZones: module.zones.filter(zone => zone.visibility === 'public').map(zone => zone.id),
   };
 }
 
 function emitMatchViews(room: RoomState): void {
   const match = matches.get(room.code);
   if (!match) return;
-  const policy = moduleZonePolicy();
+  const policy = moduleZonePolicy(room);
 
   for (const seat of room.seats) {
     if (!seat.memberId) continue;
@@ -394,7 +412,18 @@ async function restoreState(): Promise<void> {
   const snapshot = await loadSnapshot();
   if (!snapshot) return;
 
-  for (const room of snapshot.rooms) rooms.set(room.code, room);
+  for (const savedRoom of snapshot.rooms) {
+    const restoredModule = findModule(savedRoom.settings.moduleId, savedRoom.settings.moduleVersion) ?? genericDuelModule;
+    const room: RoomState = {
+      ...savedRoom,
+      settings: {
+        ...savedRoom.settings,
+        moduleId: restoredModule.id,
+        moduleVersion: restoredModule.version,
+      },
+    };
+    rooms.set(room.code, room);
+  }
   for (const record of snapshot.matches) {
     if (!rooms.has(record.roomCode)) continue;
     matches.set(record.roomCode, {
@@ -476,16 +505,24 @@ io.on('connection', socket => {
     scheduleSave();
   });
 
-  socket.on('room:create', (payload: { displayName?: unknown; roomName?: unknown; format?: unknown; isPublic?: unknown } = {}) => {
+  socket.on('room:create', (payload: { displayName?: unknown; roomName?: unknown; format?: unknown; isPublic?: unknown; moduleId?: unknown } = {}) => {
     if (currentSession(socket)) return fail(socket, 'Leave your current room first.');
     const displayName = safeName(payload.displayName);
     if (!displayName) return fail(socket, 'Choose a display name between 1 and 32 characters.');
 
     const memberId = randomUUID();
     const format = safeFormat(payload.format) ?? '1v1';
+    const selectedModule = findModule(payload.moduleId) ?? genericDuelModule;
+    if (!moduleSupportsFormat(selectedModule, format)) return fail(socket, 'That game module does not support this match format.');
     const roomName = typeof payload.roomName === 'string' ? payload.roomName.trim().slice(0, 60) : '';
     const isPublic = payload.isPublic === true;
-    let room = createRoom(code(), memberId, displayName, { format, isPublic, ...(roomName ? { roomName } : {}) });
+    let room = createRoom(code(), memberId, displayName, {
+      format,
+      moduleId: selectedModule.id,
+      moduleVersion: selectedModule.version,
+      isPublic,
+      ...(roomName ? { roomName } : {}),
+    });
     if (!isPublic) {
       const inviteCode = newInviteCode();
       room = { ...room, inviteCodeHash: inviteHash(inviteCode) };
@@ -559,7 +596,17 @@ io.on('connection', socket => {
 
     const safePatch: Partial<RoomSettings> = {};
     if (typeof payload.roomName === 'string') safePatch.roomName = payload.roomName.trim().slice(0, 60);
-    if (safeFormat(payload.format)) safePatch.format = safeFormat(payload.format);
+    const requestedFormat = safeFormat(payload.format) ?? room.settings.format;
+    const requestedModule = payload.moduleId !== undefined
+      ? findModule(payload.moduleId)
+      : moduleForRoom(room);
+    if (!requestedModule) return fail(socket, 'Unknown game module.');
+    if (!moduleSupportsFormat(requestedModule, requestedFormat)) return fail(socket, 'That game module does not support this match format.');
+    if (safeFormat(payload.format)) safePatch.format = requestedFormat;
+    if (payload.moduleId !== undefined) {
+      safePatch.moduleId = requestedModule.id;
+      safePatch.moduleVersion = requestedModule.version;
+    }
     if (payload.ruleset === 'standard' || payload.ruleset === 'unrestricted' || payload.ruleset === 'custom') safePatch.ruleset = payload.ruleset;
     if (typeof payload.isPublic === 'boolean') safePatch.isPublic = payload.isPublic;
     if (typeof payload.allowSpectators === 'boolean') safePatch.allowSpectators = payload.allowSpectators;
@@ -604,7 +651,7 @@ io.on('connection', socket => {
     rooms.set(room.code, updated);
     matches.set(room.code, {
       revision: 0,
-      table: createInitialTable(requiredSeats(room.settings.format)),
+      table: createInitialTableForModule(requiredSeats(room.settings.format), moduleForRoom(updated)),
       lastActionSequence: new Map(),
     });
     emitRoom(updated);
@@ -632,7 +679,7 @@ io.on('connection', socket => {
     const action = toServerAction(match.table, session.seat, payload.action);
     if (!action) return fail(socket, 'Unsupported match action.');
 
-    const policy = moduleZonePolicy();
+    const policy = moduleZonePolicy(room);
     const updated = applyAction(match.table, action, policy.allowedZones, policy.stackableZones);
     if (updated === match.table) {
       socket.emit('match:action-rejected', { reason: 'not-allowed', sequence, lastSequence, revision: match.revision });
