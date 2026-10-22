@@ -1,9 +1,9 @@
 import { useMemo, useRef, useState } from 'react';
 import {
-  builtInCardCatalog,
   isDeckDefinition,
   searchCardCatalog,
   starterDeckForModule,
+  type CardDefinition,
   type DeckDefinition,
   type GameModule,
 } from '@rb-unbound/tabletop';
@@ -11,8 +11,10 @@ import {
 export function DeckTools({
   module,
   onLoadDeck,
+  catalog,
 }: {
   module: GameModule;
+  catalog: readonly CardDefinition[];
   onLoadDeck: (deck: DeckDefinition) => void;
 }) {
   const [query, setQuery] = useState('');
@@ -23,7 +25,7 @@ export function DeckTools({
   const moduleDeck = deck.moduleId === module.id && deck.moduleVersion === module.version
     ? deck
     : starterDeckForModule(module);
-  const results = useMemo(() => searchCardCatalog(builtInCardCatalog, module, query), [module, query]);
+  const results = useMemo(() => searchCardCatalog(catalog, module, query), [catalog, module, query]);
 
   const download = () => {
     const blob = new Blob([JSON.stringify(moduleDeck, null, 2)], { type: 'application/json' });
@@ -40,7 +42,7 @@ export function DeckTools({
     try {
       if (file.size > 250_000) throw new Error('too large');
       const parsed: unknown = JSON.parse(await file.text());
-      if (!isDeckDefinition(parsed, module, builtInCardCatalog)) throw new Error('invalid');
+      if (!isDeckDefinition(parsed, module, catalog)) throw new Error('invalid');
       setDeck(parsed);
       setMessage(`Imported ${parsed.name} · ${parsed.cards.length} cards`);
     } catch {
