@@ -55,7 +55,12 @@ export type PublicCard = Omit<Card, 'label' | 'id' | 'definitionId'> & {
 export type TableView = {
   version: 4;
   cards: PublicCard[];
-  hidden: Array<{ owner: PlayerId; deckCount: number; handCount: number }>;
+  hidden: Array<{
+    owner: PlayerId;
+    deckCount: number;
+    handCount: number;
+    zoneCounts?: Record<string, number>;
+  }>;
 };
 
 const samples = [
@@ -249,16 +254,27 @@ export function projectTable(
   viewer?: PlayerId,
   visibleHandOwners?: PlayerId[],
   publicZones: readonly string[] = ['field', 'discard'],
+  publicCountZones: readonly string[] = ['deck'],
 ): TableView {
   const privateHandOwners = new Set<PlayerId>(visibleHandOwners ?? (viewer ? [viewer] : []));
   const publicZoneIds = new Set(publicZones);
+  const publicCountZoneIds = new Set(publicCountZones);
   const hidden = ([1, 2, 3, 4] as PlayerId[])
-    .map(owner => ({
-      owner,
-      deckCount: state.cards.filter(card => card.owner === owner && card.zone === 'deck').length,
-      handCount: state.cards.filter(card => card.owner === owner && card.zone === 'hand').length,
-    }))
-    .filter(summary => summary.deckCount || summary.handCount);
+    .map(owner => {
+      const zoneCounts = Object.fromEntries(
+        [...publicCountZoneIds].map(zoneId => [
+          zoneId,
+          state.cards.filter(card => card.owner === owner && card.zone === zoneId).length,
+        ]),
+      );
+      return {
+        owner,
+        deckCount: zoneCounts.deck ?? 0,
+        handCount: state.cards.filter(card => card.owner === owner && card.zone === 'hand').length,
+        zoneCounts,
+      };
+    })
+    .filter(summary => summary.handCount || Object.values(summary.zoneCounts).some(count => count > 0));
 
   const cards: PublicCard[] = [];
   for (const card of state.cards) {
