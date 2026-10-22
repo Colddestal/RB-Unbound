@@ -27,6 +27,25 @@ import {
   type TableState,
 } from '@rb-unbound/tabletop';
 
+type Session = {
+  token: string;
+  memberId: string;
+  displayName: string;
+  roomCode: string;
+  seat?: PlayerId;
+  spectator: boolean;
+  connectedSocketId?: string;
+  disconnectedAt?: number;
+};
+
+type MatchRecord = {
+  revision: number;
+  table: TableState;
+  lastActionSequence: Map<string, number>;
+};
+
+const SESSION_TTL_MS = 30 * 60 * 1000;
+
 const httpServer = createServer((_req, res) => {
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ service: 'RB Unbound multiplayer', status: 'development' }));
@@ -42,8 +61,9 @@ const io = new Server(httpServer, {
 });
 
 const rooms = new Map<string, RoomState>();
-const matches = new Map<string, TableState>();
-const socketRoom = new Map<string, string>();
+const matches = new Map<string, MatchRecord>();
+const sessions = new Map<string, Session>();
+const socketSession = new Map<string, string>();
 
 function code(): string {
   for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -51,6 +71,10 @@ function code(): string {
     if (!rooms.has(candidate)) return candidate;
   }
   throw new Error('Could not allocate a room code');
+}
+
+function newSessionToken(): string {
+  return randomBytes(32).toString('base64url');
 }
 
 function safeName(value: unknown): string | null {
@@ -61,6 +85,16 @@ function safeName(value: unknown): string | null {
 
 function safeFormat(value: unknown): MatchFormat | undefined {
   return value === '1v1' || value === '2v2' || value === 'ffa4' ? value : undefined;
+}
+
+function currentSession(socket: Socket): Session | undefined {
+  const token = socketSession.get(socket.id);
+  return token ? sessions.get(token) : undefined;
+}
+
+function socketForMember(memberId: string): Socket | undefined {
+  const session = [...sessions.values()].find(item => item.memberId === memberId);
+  return session?.connectedSocketId ? io.sockets.sockets.get(session.connectedSocketId) : undefined;
 }
 
 function publicRoom(room: RoomState) {
@@ -75,9 +109,13 @@ function publicRoom(room: RoomState) {
       team: seat.team,
       ready: seat.ready,
       occupied: Boolean(seat.memberId),
+      connected: seat.memberId ? Boolean(socketForMember(seat.memberId)) : false,
       owner: seat.memberId === room.ownerMemberId,
     })),
-    spectators: room.spectators.map(spectator => ({ displayName: spectator.displayName })),
+    spectators: room.spectators.map(spectator => ({
+      displayName: spectator.displayName,
+      connected: Boolean(socketForMember(spectator.memberId)),
+    })),
     chat: room.chat.map(({ memberId: _memberId, ...message }) => message),
   };
 }
@@ -105,22 +143,24 @@ function seatFor(room: RoomState, memberId: string): PlayerId | undefined {
 }
 
 function emitMatchViews(room: RoomState): void {
-  const table = matches.get(room.code);
-  if (!table) return;
+  const match = matches.get(room.code);
+  if (!match) return;
 
   for (const seat of room.seats) {
     if (!seat.memberId) continue;
-    io.sockets.sockets.get(seat.memberId)?.emit('match:update', {
+    socketForMember(seat.memberId)?.emit('match:update', {
       seat: seat.seat,
       spectator: false,
-      table: projectTable(table, seat.seat),
+      revision: match.revision,
+      table: projectTable(match.table, seat.seat),
     });
   }
 
   for (const spectator of room.spectators) {
-    io.sockets.sockets.get(spectator.memberId)?.emit('match:update', {
+    socketForMember(spectator.memberId)?.emit('match:update', {
       spectator: true,
-      table: projectTable(table),
+      revision: match.revision,
+      table: projectTable(match.table),
     });
   }
 }
@@ -143,56 +183,111 @@ function toServerAction(table: TableState, seat: PlayerId, action: ClientTableAc
   return null;
 }
 
-function removeFromCurrentRoom(socket: Socket): void {
-  const roomCode = socketRoom.get(socket.id);
-  if (!roomCode) return;
-  const room = rooms.get(roomCode);
-  socketRoom.delete(socket.id);
-  socket.leave(roomCode);
-  if (!room) return;
+function establishSession(socket: Socket, room: RoomState, displayName: string, memberId: string, seat?: PlayerId, spectator = false): Session {
+  const token = newSessionToken();
+  const session: Session = {
+    token,
+    memberId,
+    displayName,
+    roomCode: room.code,
+    seat,
+    spectator,
+    connectedSocketId: socket.id,
+  };
+  sessions.set(token, session);
+  socketSession.set(socket.id, token);
+  socket.join(room.code);
+  socket.emit('session:issued', { token, roomCode: room.code, seat, spectator });
+  socket.emit('room:identity', { code: room.code, seat, spectator });
+  return session;
+}
 
-  if (room.status === 'active') {
-    emitRoom(room);
-    return;
+function expireSession(token: string): void {
+  const session = sessions.get(token);
+  if (!session || session.connectedSocketId) return;
+  if (!session.disconnectedAt || Date.now() - session.disconnectedAt < SESSION_TTL_MS) return;
+
+  const room = rooms.get(session.roomCode);
+  if (room?.status === 'lobby') {
+    const updated = leaveRoom(room, session.memberId);
+    rooms.set(room.code, updated);
+    emitRoom(updated);
   }
+  sessions.delete(token);
+}
 
-  const updated = leaveRoom(room, socket.id);
-  const hasMembers = updated.seats.some(seat => seat.memberId) || updated.spectators.length > 0;
-  if (!hasMembers) {
-    rooms.delete(roomCode);
-    matches.delete(roomCode);
-    return;
-  }
+function markDisconnected(socket: Socket): void {
+  const token = socketSession.get(socket.id);
+  socketSession.delete(socket.id);
+  if (!token) return;
 
-  rooms.set(roomCode, updated);
-  emitRoom(updated);
+  const session = sessions.get(token);
+  if (!session || session.connectedSocketId !== socket.id) return;
+  session.connectedSocketId = undefined;
+  session.disconnectedAt = Date.now();
+
+  const room = rooms.get(session.roomCode);
+  if (room) emitRoom(room);
+
+  const timeout = setTimeout(() => expireSession(token), SESSION_TTL_MS + 1000);
+  timeout.unref();
 }
 
 io.on('connection', socket => {
   socket.emit('status', { message: 'Connected to RB Unbound development multiplayer server.' });
 
+  socket.on('session:resume', (payload: { token?: unknown } = {}) => {
+    if (typeof payload.token !== 'string' || payload.token.length > 100) return fail(socket, 'Invalid session token.');
+    const session = sessions.get(payload.token);
+    if (!session) return socket.emit('session:invalid');
+
+    const room = rooms.get(session.roomCode);
+    if (!room) {
+      sessions.delete(payload.token);
+      return socket.emit('session:invalid');
+    }
+
+    if (session.connectedSocketId && session.connectedSocketId !== socket.id) {
+      io.sockets.sockets.get(session.connectedSocketId)?.disconnect(true);
+    }
+
+    session.connectedSocketId = socket.id;
+    session.disconnectedAt = undefined;
+    socketSession.set(socket.id, session.token);
+    socket.join(room.code);
+
+    const lastActionSequence = matches.get(room.code)?.lastActionSequence.get(session.memberId) ?? 0;
+    socket.emit('session:resumed', {
+      token: session.token,
+      roomCode: room.code,
+      seat: session.seat,
+      spectator: session.spectator,
+      lastActionSequence,
+    });
+    socket.emit('room:identity', { code: room.code, seat: session.seat, spectator: session.spectator });
+    socket.emit('room:update', publicRoom(room));
+    if (room.status === 'active') emitMatchViews(room);
+    emitRoom(room);
+  });
+
   socket.on('room:create', (payload: { displayName?: unknown; roomName?: unknown; format?: unknown } = {}) => {
-    if (socketRoom.has(socket.id)) return fail(socket, 'Leave your current room first.');
+    if (currentSession(socket)) return fail(socket, 'Leave your current room first.');
     const displayName = safeName(payload.displayName);
     if (!displayName) return fail(socket, 'Choose a display name between 1 and 32 characters.');
 
+    const memberId = randomUUID();
     const format = safeFormat(payload.format) ?? '1v1';
     const roomName = typeof payload.roomName === 'string' ? payload.roomName.trim().slice(0, 60) : '';
-    const room = createRoom(code(), socket.id, displayName, {
-      format,
-      ...(roomName ? { roomName } : {}),
-    });
+    const room = createRoom(code(), memberId, displayName, { format, ...(roomName ? { roomName } : {}) });
 
     rooms.set(room.code, room);
-    socketRoom.set(socket.id, room.code);
-    socket.join(room.code);
+    establishSession(socket, room, displayName, memberId, 1, false);
     socket.emit('room:created', { code: room.code });
-    socket.emit('room:identity', { code: room.code, seat: 1, spectator: false });
     emitRoom(room);
   });
 
   socket.on('room:join-seat', (payload: { code?: unknown; displayName?: unknown; seat?: unknown } = {}) => {
-    if (socketRoom.has(socket.id)) return fail(socket, 'Leave your current room first.');
+    if (currentSession(socket)) return fail(socket, 'Leave your current room first.');
     const roomCode = typeof payload.code === 'string' ? payload.code.trim().toUpperCase() : '';
     const displayName = safeName(payload.displayName);
     const seat = payload.seat;
@@ -200,49 +295,49 @@ io.on('connection', socket => {
 
     const room = rooms.get(roomCode);
     if (!room || room.status !== 'lobby') return fail(socket, 'Room not found or already started.');
-    const updated = occupySeat(room, socket.id, displayName, seat as SeatNumber);
+
+    const memberId = randomUUID();
+    const updated = occupySeat(room, memberId, displayName, seat as SeatNumber);
     if (updated === room) return fail(socket, 'That seat is unavailable.');
 
     rooms.set(roomCode, updated);
-    socketRoom.set(socket.id, roomCode);
-    socket.join(roomCode);
-    socket.emit('room:identity', { code: roomCode, seat, spectator: false });
+    establishSession(socket, updated, displayName, memberId, seat as PlayerId, false);
     emitRoom(updated);
   });
 
   socket.on('room:join-spectator', (payload: { code?: unknown; displayName?: unknown } = {}) => {
-    if (socketRoom.has(socket.id)) return fail(socket, 'Leave your current room first.');
+    if (currentSession(socket)) return fail(socket, 'Leave your current room first.');
     const roomCode = typeof payload.code === 'string' ? payload.code.trim().toUpperCase() : '';
     const displayName = safeName(payload.displayName);
     if (!displayName) return fail(socket, 'Invalid spectator name.');
 
     const room = rooms.get(roomCode);
     if (!room) return fail(socket, 'Room not found.');
-    const updated = addSpectator(room, socket.id, displayName);
+
+    const memberId = randomUUID();
+    const updated = addSpectator(room, memberId, displayName);
     if (updated === room) return fail(socket, 'Spectators are disabled or you are already in this room.');
 
     rooms.set(roomCode, updated);
-    socketRoom.set(socket.id, roomCode);
-    socket.join(roomCode);
-    socket.emit('room:identity', { code: roomCode, spectator: true });
+    establishSession(socket, updated, displayName, memberId, undefined, true);
     emitRoom(updated);
     if (updated.status === 'active') emitMatchViews(updated);
   });
 
   socket.on('room:ready', (payload: { ready?: unknown } = {}) => {
-    const roomCode = socketRoom.get(socket.id);
-    const room = roomCode ? rooms.get(roomCode) : undefined;
-    if (!room || typeof payload.ready !== 'boolean') return fail(socket, 'You are not in a lobby.');
+    const session = currentSession(socket);
+    const room = session ? rooms.get(session.roomCode) : undefined;
+    if (!session || !room || typeof payload.ready !== 'boolean') return fail(socket, 'You are not in a lobby.');
 
-    const updated = setReady(room, socket.id, payload.ready);
+    const updated = setReady(room, session.memberId, payload.ready);
     rooms.set(room.code, updated);
     emitRoom(updated);
   });
 
   socket.on('room:settings', (payload: Partial<RoomSettings> = {}) => {
-    const roomCode = socketRoom.get(socket.id);
-    const room = roomCode ? rooms.get(roomCode) : undefined;
-    if (!room) return fail(socket, 'You are not in a room.');
+    const session = currentSession(socket);
+    const room = session ? rooms.get(session.roomCode) : undefined;
+    if (!session || !room) return fail(socket, 'You are not in a room.');
 
     const safePatch: Partial<RoomSettings> = {};
     if (typeof payload.roomName === 'string') safePatch.roomName = payload.roomName.trim().slice(0, 60);
@@ -258,19 +353,19 @@ io.on('connection', socket => {
       payload.turnTimerSeconds <= 3600
     )) safePatch.turnTimerSeconds = payload.turnTimerSeconds;
 
-    const updated = setRoomSettings(room, socket.id, safePatch);
+    const updated = setRoomSettings(room, session.memberId, safePatch);
     if (updated === room) return fail(socket, 'Only the room owner can change unlocked lobby settings.');
     rooms.set(room.code, updated);
     emitRoom(updated);
   });
 
   socket.on('room:start', (payload: { force?: unknown } = {}) => {
-    const roomCode = socketRoom.get(socket.id);
-    const room = roomCode ? rooms.get(roomCode) : undefined;
-    if (!room) return fail(socket, 'You are not in a room.');
+    const session = currentSession(socket);
+    const room = session ? rooms.get(session.roomCode) : undefined;
+    if (!session || !room) return fail(socket, 'You are not in a room.');
 
     const force = payload.force === true;
-    const updated = startRoom(room, socket.id, force);
+    const updated = startRoom(room, session.memberId, force);
     if (updated === room) {
       return fail(socket, force
         ? 'Force start requires the room owner and every required seat to be occupied.'
@@ -278,56 +373,62 @@ io.on('connection', socket => {
     }
 
     rooms.set(room.code, updated);
-    matches.set(room.code, createInitialTable(requiredSeats(room.settings.format)));
-    emitRoom(updated);
-    io.to(room.code).emit('room:started', {
-      code: room.code,
-      format: room.settings.format,
-      ruleset: room.settings.ruleset,
+    matches.set(room.code, {
+      revision: 0,
+      table: createInitialTable(requiredSeats(room.settings.format)),
+      lastActionSequence: new Map(),
     });
+    emitRoom(updated);
+    io.to(room.code).emit('room:started', { code: room.code, format: room.settings.format, ruleset: room.settings.ruleset });
     emitMatchViews(updated);
   });
 
-  socket.on('match:action', (payload: unknown) => {
-    const roomCode = socketRoom.get(socket.id);
-    const room = roomCode ? rooms.get(roomCode) : undefined;
-    const table = roomCode ? matches.get(roomCode) : undefined;
-    if (!room || room.status !== 'active' || !table) return fail(socket, 'No active match.');
-    if (!isClientTableAction(payload)) return fail(socket, 'Invalid match action.');
+  socket.on('match:action', (payload: { sequence?: unknown; action?: unknown } = {}) => {
+    const session = currentSession(socket);
+    const room = session ? rooms.get(session.roomCode) : undefined;
+    const match = session ? matches.get(session.roomCode) : undefined;
+    if (!session || !room || room.status !== 'active' || !match) return fail(socket, 'No active match.');
+    if (session.spectator || !session.seat) return fail(socket, 'Spectators cannot manipulate the table.');
+    if (!Number.isSafeInteger(payload.sequence) || Number(payload.sequence) < 1) return fail(socket, 'Invalid action sequence.');
+    if (!isClientTableAction(payload.action)) return fail(socket, 'Invalid match action.');
 
-    const seat = seatFor(room, socket.id);
-    if (!seat) return fail(socket, 'Spectators cannot manipulate the table.');
+    const sequence = Number(payload.sequence);
+    const lastSequence = match.lastActionSequence.get(session.memberId) ?? 0;
+    if (sequence <= lastSequence) {
+      socket.emit('match:action-rejected', { reason: 'duplicate-or-out-of-order', sequence, lastSequence, revision: match.revision });
+      return;
+    }
 
-    const action = toServerAction(table, seat, payload);
+    const action = toServerAction(match.table, session.seat, payload.action);
     if (!action) return fail(socket, 'Unsupported match action.');
 
-    const updated = applyAction(table, action);
-    if (updated === table) return fail(socket, 'That action is not allowed.');
+    const updated = applyAction(match.table, action);
+    if (updated === match.table) {
+      socket.emit('match:action-rejected', { reason: 'not-allowed', sequence, lastSequence, revision: match.revision });
+      return;
+    }
 
-    matches.set(room.code, updated);
+    match.table = updated;
+    match.revision += 1;
+    match.lastActionSequence.set(session.memberId, sequence);
     emitMatchViews(room);
   });
 
   socket.on('match:request-state', () => {
-    const roomCode = socketRoom.get(socket.id);
-    const room = roomCode ? rooms.get(roomCode) : undefined;
+    const session = currentSession(socket);
+    const room = session ? rooms.get(session.roomCode) : undefined;
     if (room?.status === 'active') emitMatchViews(room);
   });
 
   socket.on('chat:send', (payload: { body?: unknown } = {}) => {
-    const roomCode = socketRoom.get(socket.id);
-    const room = roomCode ? rooms.get(roomCode) : undefined;
-    if (!room || typeof payload.body !== 'string') return fail(socket, 'You are not in a room.');
+    const session = currentSession(socket);
+    const room = session ? rooms.get(session.roomCode) : undefined;
+    if (!session || !room || typeof payload.body !== 'string') return fail(socket, 'You are not in a room.');
 
-    const participant = room.seats.find(seat => seat.memberId === socket.id) ??
-      room.spectators.find(spectator => spectator.memberId === socket.id);
-    if (!participant) return fail(socket, 'You are not a room participant.');
-
-    const displayName = 'displayName' in participant && participant.displayName ? participant.displayName : 'Player';
     const updated = appendChat(room, {
       id: randomUUID(),
-      memberId: socket.id,
-      displayName,
+      memberId: session.memberId,
+      displayName: session.displayName,
       body: payload.body,
       sentAt: new Date().toISOString(),
     });
@@ -338,8 +439,22 @@ io.on('connection', socket => {
     emitRoom(updated);
   });
 
-  socket.on('room:leave', () => removeFromCurrentRoom(socket));
-  socket.on('disconnect', () => removeFromCurrentRoom(socket));
+  socket.on('room:leave', () => {
+    const session = currentSession(socket);
+    if (!session) return;
+    const room = rooms.get(session.roomCode);
+    if (room?.status === 'lobby') {
+      const updated = leaveRoom(room, session.memberId);
+      rooms.set(room.code, updated);
+      emitRoom(updated);
+    }
+    sessions.delete(session.token);
+    socketSession.delete(socket.id);
+    socket.leave(session.roomCode);
+    socket.emit('session:cleared');
+  });
+
+  socket.on('disconnect', () => markDisconnected(socket));
 });
 
 httpServer.listen(3001, '127.0.0.1', () => {

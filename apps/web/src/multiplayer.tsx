@@ -31,7 +31,7 @@ type RoomSnapshot = {
 };
 
 type Identity = { code: string; seat?: PlayerId; spectator: boolean };
-type MatchSnapshot = { seat?: PlayerId; spectator: boolean; table: TableView };
+type MatchSnapshot = { seat?: PlayerId; spectator: boolean; revision: number; table: TableView };
 
 const SERVER_URL = 'http://127.0.0.1:3001';
 
@@ -50,21 +50,53 @@ export function Multiplayer() {
   const [chatText, setChatText] = useState('');
   const [selected, setSelected] = useState('');
   const boardRef = useRef<HTMLDivElement>(null);
+  const actionSequenceRef = useRef(0);
 
   useEffect(() => {
     const client = io(SERVER_URL, { transports: ['websocket', 'polling'] });
     setSocket(client);
 
-    client.on('connect', () => { setConnected(true); setError(''); });
+    client.on('connect', () => {
+      setConnected(true);
+      setError('');
+      const token = window.sessionStorage.getItem('rb-unbound-session');
+      if (token) client.emit('session:resume', { token });
+    });
     client.on('disconnect', () => setConnected(false));
     client.on('connect_error', () => setError('Could not reach the local multiplayer server. Run npm run dev:server in another terminal.'));
     client.on('room:error', (payload: { message?: string }) => setError(payload.message ?? 'Room error.'));
+    client.on('session:issued', (payload: { token: string }) => {
+      window.sessionStorage.setItem('rb-unbound-session', payload.token);
+      actionSequenceRef.current = 0;
+    });
+    client.on('session:resumed', (payload: { lastActionSequence?: number }) => {
+      actionSequenceRef.current = Number.isSafeInteger(payload.lastActionSequence) ? Number(payload.lastActionSequence) : 0;
+    });
+    client.on('session:invalid', () => {
+      window.sessionStorage.removeItem('rb-unbound-session');
+      setRoom(null);
+      setIdentity(null);
+      setMatch(null);
+    });
+    client.on('session:cleared', () => {
+      window.sessionStorage.removeItem('rb-unbound-session');
+      setRoom(null);
+      setIdentity(null);
+      setMatch(null);
+      actionSequenceRef.current = 0;
+    });
     client.on('room:identity', (payload: Identity) => setIdentity(payload));
     client.on('room:update', (payload: RoomSnapshot) => setRoom(payload));
     client.on('room:started', () => client.emit('match:request-state'));
     client.on('match:update', (payload: MatchSnapshot) => {
       setMatch(payload);
       setSelected(current => payload.table.cards.some(card => card.id === current) ? current : '');
+    });
+    client.on('match:action-rejected', (payload: { reason?: string }) => {
+      setError(payload.reason === 'duplicate-or-out-of-order'
+        ? 'A stale or duplicate action was ignored. Your view has been resynchronized.'
+        : 'That action was rejected by the server.');
+      client.emit('match:request-state');
     });
 
     return () => { client.disconnect(); };
@@ -78,7 +110,10 @@ export function Multiplayer() {
 
   const hiddenByOwner = useMemo(() => new Map(match?.table.hidden.map(summary => [summary.owner, summary]) ?? []), [match]);
 
-  const emitAction = (action: ClientTableAction) => socket?.emit('match:action', action);
+  const emitAction = (action: ClientTableAction) => {
+    actionSequenceRef.current += 1;
+    socket?.emit('match:action', { sequence: actionSequenceRef.current, action });
+  };
 
   const create = () => {
     setError('');
@@ -179,7 +214,7 @@ export function Multiplayer() {
   return <div className="app multiplayer-shell">
     <header>
       <div><span className="eyebrow">ROOM {room.code}</span><h1>{room.settings.roomName}</h1><p>{room.settings.format.toUpperCase()} · {room.settings.ruleset} · {room.status}</p></div>
-      <span className={`connection-pill ${connected ? 'online' : ''}`}>{connected ? 'Connected' : 'Disconnected'}</span>
+      <span className={`connection-pill ${connected ? 'online' : ''}`}>{connected ? 'Connected' : 'Reconnecting…'}</span>
     </header>
 
     {error && <p className="error" role="alert">{error}</p>}
@@ -214,6 +249,7 @@ export function Multiplayer() {
       <aside className="panel match-info">
         <h2>Match</h2>
         <p>{identity?.spectator ? 'Spectating' : `You are Seat ${identity?.seat}`}</p>
+        <p className="muted">Server revision {match.revision}</p>
         {[1,2,3,4].map(value => {
           const player = value as PlayerId;
           const summary = hiddenByOwner.get(player);

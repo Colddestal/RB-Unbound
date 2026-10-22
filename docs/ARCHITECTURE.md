@@ -51,3 +51,14 @@ The development server now owns the canonical tabletop state for active rooms. B
 Deck shuffles are generated server-side with Node's cryptographic random source. Multiplayer projections never send deck identities/order to clients. A player receives identities for their own hand plus public field/discard information. Opponent hands and all decks are represented only by counts; face-down public cards have their identity redacted for unauthorized viewers.
 
 The current match state is in memory and is not durable. Reconnect/session recovery, action sequence numbers, persistence and horizontal scaling remain future work.
+
+
+## Reconnect and action sequencing
+
+The server now issues an opaque 256-bit session token when a player creates or joins a room. The browser stores only this token in session storage and presents it again after a refresh or temporary disconnect. The server maps the token back to the stable room member identity and seat; clients do not choose their own member identifiers.
+
+Disconnected lobby sessions are retained for a limited recovery window. Active-match seats remain reserved for the session so a transient disconnect cannot be used to steal a seat.
+
+Match actions carry a monotonically increasing per-member sequence number. The server records the last accepted sequence and rejects duplicate or out-of-order actions while continuing to serialize all room state changes on the authoritative server. Match updates include a server revision counter for diagnostics and later persistence/replay work.
+
+Reconnect does not yet survive a server restart because room, match and session state are still in memory.
