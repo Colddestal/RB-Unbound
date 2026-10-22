@@ -202,7 +202,9 @@ export function applyAction(
           order: nextOrder(state.cards, current.owner, action.zone),
           faceUp: action.zone === 'deck'
             ? false
-            : (current.zone === 'hand' && action.zone === 'field' ? false : current.faceUp),
+            : action.zone === 'hand'
+              ? true
+              : (current.zone === 'hand' && action.zone === 'field' ? false : current.faceUp),
           stackOn: undefined,
           x: enteringField ? defaults[current.owner].x : current.x,
           y: enteringField ? defaults[current.owner].y : current.y,

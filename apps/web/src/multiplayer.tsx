@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { io, type Socket } from 'socket.io-client';
 import { TabletopDock } from './tabletop-dock';
 import { DeckPile } from './deck-pile';
+import { pointInRect } from './drag-drop';
 import { toCanonicalPoint, toViewerPoint, toViewerSeat } from './board-perspective';
 import { actionForCode, displayKey, type KeyBindings } from './controls';
 import {
@@ -78,7 +79,10 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
   const [hovered, setHovered] = useState('');
   const [pinned, setPinned] = useState('');
+  const [dragPreview, setDragPreview] = useState<{ id: string; label: string; x: number; y: number } | null>(null);
+  const [fieldDragId, setFieldDragId] = useState('');
   const boardRef = useRef<HTMLDivElement>(null);
+  const handStripRef = useRef<HTMLElement | null>(null);
   const handDragRef = useRef<{ id: string; startX: number; startY: number } | null>(null);
   const actionSequenceRef = useRef(0);
 
@@ -283,12 +287,13 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
       onPointerDown={event => {
         if (!owned || event.button !== 0) return;
         setSelected(card.id);
+        setFieldDragId(card.id);
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
       onPointerMove={event => {
         if (!owned || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
         const rect = boardRef.current?.getBoundingClientRect();
-        if (!rect) return;
+        if (!rect || !pointInRect({ x: event.clientX, y: event.clientY }, rect)) return;
         const point = toCanonicalPoint({
           x: ((event.clientX - rect.left - 43) / rect.width) * 1000,
           y: ((event.clientY - rect.top - 58) / rect.height) * 600,
@@ -300,10 +305,18 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           y: point.y,
         });
       }}
+      onPointerCancel={event => {
+        setFieldDragId('');
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+      }}
       onPointerUp={event => {
-        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-          event.currentTarget.releasePointerCapture(event.pointerId);
+        if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+        const handRect = handStripRef.current?.getBoundingClientRect();
+        if (owned && handRect && pointInRect({ x: event.clientX, y: event.clientY }, handRect)) {
+          emitAction({ type: 'to-zone', id: card.id, zone: 'hand' });
         }
+        setFieldDragId('');
+        event.currentTarget.releasePointerCapture(event.pointerId);
       }}
     >
       <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span>
@@ -609,11 +622,11 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           })}
         </div>
 
-        {!identity?.spectator && <section className="hand-strip">
+        {!identity?.spectator && <section ref={handStripRef} className={`hand-strip ${fieldDragId ? 'hand-drop-active' : ''}`}>
           <strong>Your hand</strong>
           <div className="hand-cards">{ownHand.map(card => <button
             key={card.id}
-            className={`mini-card ${selected === card.id ? 'selected' : ''}`}
+            className={`mini-card ${selected === card.id ? 'selected' : ''} ${dragPreview?.id === card.id ? 'drag-source' : ''}`}
             onMouseEnter={() => setHovered(card.id)}
             onMouseLeave={() => setHovered('')}
             onClick={() => { setSelected(card.id); setPinned(card.id); }}
@@ -621,7 +634,18 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
             onPointerDown={event => {
               if (event.button !== 0) return;
               handDragRef.current = { id: card.id, startX: event.clientX, startY: event.clientY };
+              setDragPreview({ id: card.id, label: card.label ?? 'Card', x: event.clientX, y: event.clientY });
               event.currentTarget.setPointerCapture(event.pointerId);
+            }}
+            onPointerMove={event => {
+              if (event.currentTarget.hasPointerCapture(event.pointerId) && handDragRef.current?.id === card.id) {
+                setDragPreview({ id: card.id, label: card.label ?? 'Card', x: event.clientX, y: event.clientY });
+              }
+            }}
+            onPointerCancel={event => {
+              handDragRef.current = null;
+              setDragPreview(null);
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
             }}
             onPointerUp={event => {
               if (!event.currentTarget.hasPointerCapture(event.pointerId) || handDragRef.current?.id !== card.id) return;
@@ -644,10 +668,20 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
                 });
               }
               handDragRef.current = null;
+              setDragPreview(null);
               event.currentTarget.releasePointerCapture(event.pointerId);
             }}
           ><span>✦</span>{card.label}</button>)}</div>
         </section>}
+
+        {dragPreview && <div
+          className="drag-card-ghost"
+          style={{ left: dragPreview.x - 43, top: dragPreview.y - 58 }}
+          aria-hidden="true"
+        >
+          <span className="card-symbol">✦</span>
+          <span>{dragPreview.label}</span>
+        </div>}
 
         {!identity?.spectator && teammateHands.length > 0 && <section className="hand-strip teammate-hand-strip">
           <strong>Teammate hand · read-only</strong>

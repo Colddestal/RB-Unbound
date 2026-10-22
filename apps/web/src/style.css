@@ -195,3 +195,11 @@ button:focus-visible,select:focus-visible,input:focus-visible,.card:focus-visibl
 .history-entry:last-child{border-bottom:0}
 .history-entry time{color:#647b91;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:9px;padding-top:2px}
 .history-entry span{color:#d5e1ec}
+
+.drag-source{opacity:.28!important;filter:saturate(.65);outline:2px dashed #8fded0!important}
+.drag-card-ghost{position:fixed;width:86px;height:117px;z-index:5000;pointer-events:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;border:2px solid #c9efea;border-radius:9px;background:linear-gradient(145deg,#4b8790,#27546c);color:#fff;box-shadow:0 18px 38px #000c;transform:rotate(2deg) scale(1.04);font-size:11px;font-weight:750;text-align:center}
+.drag-card-ghost .card-symbol{font-size:28px}
+.local-hand-drop-zone{position:absolute;left:14%;right:14%;bottom:8px;height:118px;display:grid;place-items:center;border:2px dashed transparent;border-radius:14px;background:transparent;color:transparent;pointer-events:none;z-index:12;transition:background .12s,border-color .12s,color .12s}
+.local-hand-drop-zone.active{border-color:#75d6bf;background:#1f6d5f38;color:#c9f7ec;font-size:12px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;box-shadow:inset 0 0 35px #5bd7bc20}
+.hand-strip.hand-drop-active{border-color:#75d6bf;background:#163a35;box-shadow:0 0 0 2px #75d6bf44 inset,0 0 24px #55cdb52e}
+.hand-strip.hand-drop-active::before{content:"Drop here to return to hand";display:block;margin-bottom:4px;color:#b9f0e4;font-size:11px;font-weight:800;letter-spacing:.8px;text-transform:uppercase}
