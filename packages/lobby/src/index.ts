@@ -77,6 +77,9 @@ export function createRoom(code: string, ownerMemberId: string, ownerName: strin
 export function setRoomSettings(room: RoomState, actor: string, patch: Partial<RoomSettings>): RoomState {
   if (actor !== room.ownerMemberId || room.status !== 'lobby' || room.settingsLocked) return room;
   const format = patch.format ?? room.settings.format;
+  const allowedSeats = requiredSeats(format);
+  if (room.seats.some(seat => seat.memberId && !allowedSeats.includes(seat.seat))) return room;
+
   const settings = { ...room.settings, ...patch, format };
   return {
     ...room,
