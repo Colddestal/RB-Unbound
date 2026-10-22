@@ -65,6 +65,11 @@ export function Multiplayer() {
     client.on('disconnect', () => setConnected(false));
     client.on('connect_error', () => setError('Could not reach the local multiplayer server. Run npm run dev:server in another terminal.'));
     client.on('room:error', (payload: { message?: string }) => setError(payload.message ?? 'Room error.'));
+    client.on('abuse:warning', (payload: { reason?: string }) => {
+      setError(payload.reason === 'payload-too-large'
+        ? 'That request was too large and was rejected.'
+        : 'You are sending actions too quickly. Slow down for a moment.');
+    });
     client.on('session:issued', (payload: { token: string }) => {
       window.sessionStorage.setItem('rb-unbound-session', payload.token);
       actionSequenceRef.current = 0;
