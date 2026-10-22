@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react';
 import { TabletopDock, type DockHistoryEntry } from './tabletop-dock';
 import { DeckTools } from './deck-tools';
 import { DeckPile } from './deck-pile';
@@ -231,7 +231,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
     addLocalHistory(`Player ${viewer} unstacked ${selectedCard.label}.`);
   };
 
-  const openCardContext = (event: React.MouseEvent, card: Card) => {
+  const openCardContext = (event: ReactMouseEvent, card: Card) => {
     event.preventDefault();
     setSelected(card.owner === viewer ? card.id : '');
     setMultiSelected([]);
