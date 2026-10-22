@@ -110,6 +110,39 @@ describe('game module schema', () => {
     })).toBe(false);
   });
 
+  it('validates shared display-copy coordinates', () => {
+    expect(isGameModule({
+      ...genericDuelModule,
+      zones: [
+        ...genericDuelModule.zones,
+        {
+          id: 'shared-objective',
+          label: 'Shared Objective',
+          kind: 'custom',
+          visibility: 'public',
+          ownerScoped: false,
+          behavior: 'slot',
+          capacity: 1,
+          displayCopies: [{ x: 250, y: 250 }, { x: 250, y: 350 }],
+        },
+      ],
+    })).toBe(true);
+
+    expect(isGameModule({
+      ...genericDuelModule,
+      zones: [{
+        id: 'bad-copies',
+        label: 'Bad Copies',
+        kind: 'custom',
+        visibility: 'public',
+        ownerScoped: false,
+        behavior: 'slot',
+        capacity: 1,
+        displayCopies: [{ x: 1200, y: 300 }],
+      }],
+    })).toBe(false);
+  });
+
   it('rejects duplicate card field ids', () => {
     expect(isGameModule({
       ...genericDuelModule,
