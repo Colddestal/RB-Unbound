@@ -446,3 +446,5 @@ export const builtInGameModules: GameModule[] = [
   genericDuelModule,
   frontierSkirmishModule,
 ];
+
+export const defaultGameModule = frontierSkirmishModule;
