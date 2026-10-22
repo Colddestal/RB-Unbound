@@ -256,7 +256,7 @@ export function recordSeriesGameWinner(
 ): MatchSeriesState {
   if (series.status !== 'active') return series;
   const game = series.games.find(item => item.gameNumber === series.currentGame);
-  if (!game || game.status === 'complete') return series;
+  if (!game || game.status !== 'active') return series;
 
   const nextWins = (series.winsByTeam[winnerTeam] ?? 0) + 1;
   const winsByTeam = { ...series.winsByTeam, [winnerTeam]: nextWins };
