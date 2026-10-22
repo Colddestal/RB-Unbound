@@ -80,3 +80,10 @@ All inbound Socket.IO events now pass through server-side token-bucket rate limi
 The server also applies per-event serialized payload-size limits in addition to Socket.IO's global message-size cap. Repeated violations are tracked per stable member identity when available, and a client that repeatedly exceeds limits is disconnected.
 
 These controls are an initial abuse-resistance layer. Production still requires IP/proxy-aware connection limiting, authentication-backed identity, moderation tools, audit logging, metrics/alerting, and infrastructure-level protections.
+
+
+## Card inspector UI
+
+The tabletop now reserves a left-side information panel for card inspection. Hovering a visible card shows a temporary preview; clicking pins that card until another card is clicked or the pin is cleared. The same component is shared by local play, multiplayer and spectator views.
+
+The inspector only renders information already present in the current client view. In multiplayer it cannot reveal hidden hand/deck identities because those values are filtered by the server before the client receives them. Future game modules can enrich this panel with authorized card art, rules text, stats and metadata without changing the interaction model.
