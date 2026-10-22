@@ -256,11 +256,13 @@ io.on('connection', socket => {
     socketSession.set(socket.id, session.token);
     socket.join(room.code);
 
+    const lastActionSequence = matches.get(room.code)?.lastActionSequence.get(session.memberId) ?? 0;
     socket.emit('session:resumed', {
       token: session.token,
       roomCode: room.code,
       seat: session.seat,
       spectator: session.spectator,
+      lastActionSequence,
     });
     socket.emit('room:identity', { code: room.code, seat: session.seat, spectator: session.spectator });
     socket.emit('room:update', publicRoom(room));
