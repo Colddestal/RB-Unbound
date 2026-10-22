@@ -12,7 +12,9 @@ function clampWidth(value: number): number {
 export function ResizableDockColumn({ children }: { children: ReactNode }) {
   const [width, setWidth] = useState(() => {
     if (typeof window === 'undefined') return DEFAULT_WIDTH;
-    const saved = Number(window.localStorage.getItem(STORAGE_KEY));
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (raw === null) return DEFAULT_WIDTH;
+    const saved = Number(raw);
     return Number.isFinite(saved) ? clampWidth(saved) : DEFAULT_WIDTH;
   });
 
