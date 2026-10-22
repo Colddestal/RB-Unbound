@@ -172,9 +172,9 @@ export function projectTable(state: TableState, viewer?: PlayerId): TableView {
 
   const cards: PublicCard[] = [];
   for (const card of state.cards) {
-    const ownPrivate = viewer === card.owner && (card.zone === 'deck' || card.zone === 'hand');
+    const ownHand = viewer === card.owner && card.zone === 'hand';
     const publicZone = card.zone === 'field' || card.zone === 'discard';
-    if (!ownPrivate && !publicZone) continue;
+    if (!ownHand && !publicZone) continue;
 
     const hideIdentity = viewer !== card.owner && !card.faceUp;
     cards.push({
