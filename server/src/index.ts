@@ -22,6 +22,7 @@ import {
   applyAction,
   builtInModulePackages,
   createInitialTableForModule,
+  defaultGameModule,
   genericDuelModule,
   isModulePackage,
   modulePackageKey,
@@ -667,7 +668,7 @@ io.on('connection', socket => {
     if (payload.modulePackage !== undefined && !suppliedPackage) return fail(socket, 'Invalid or unsupported module package.');
     const requestedPackage = suppliedPackage ??
       (payload.moduleId === undefined
-        ? builtInModulePackages.find(bundle => bundle.module.id === 'frontier-skirmish') ?? builtInModulePackages[0]
+        ? builtInModulePackages.find(bundle => bundle.module.id === defaultGameModule.id) ?? builtInModulePackages[0]
         : findPackage(payload.moduleId, payload.moduleVersion));
     if (!requestedPackage) return fail(socket, 'That game module/version is not installed on the server.');
     const selectedModule = requestedPackage.module;
