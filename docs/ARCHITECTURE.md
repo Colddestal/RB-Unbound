@@ -42,3 +42,12 @@ Hands and deck order must only be visible to authorized players. Implement per-v
 ## Rules engine boundary
 
 Future authorized automation should be an optional separate module implementing a well-defined game-specific rules interface. Manual tabletop code must not depend on it.
+
+
+## Live match synchronization
+
+The development server now owns the canonical tabletop state for active rooms. Browser clients send intent only; the server derives the acting seat from the connection and ignores any client attempt to choose another actor.
+
+Deck shuffles are generated server-side with Node's cryptographic random source. Multiplayer projections never send deck identities/order to clients. A player receives identities for their own hand plus public field/discard information. Opponent hands and all decks are represented only by counts; face-down public cards have their identity redacted for unauthorized viewers.
+
+The current match state is in memory and is not durable. Reconnect/session recovery, action sequence numbers, persistence and horizontal scaling remain future work.
