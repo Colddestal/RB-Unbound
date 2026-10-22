@@ -18,6 +18,7 @@ type RoomSnapshot = {
     isPublic: boolean;
     allowSpectators: boolean;
     readyCheck: boolean;
+    shareTeamHands: boolean;
     turnTimerSeconds: number | null;
   };
   seats: Array<{
@@ -286,6 +287,7 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
 
   const fieldCards = match?.table.cards.filter(card => card.zone === 'field') ?? [];
   const ownHand = match?.table.cards.filter(card => card.zone === 'hand' && card.owner === identity?.seat) ?? [];
+  const teammateHands = match?.table.cards.filter(card => card.zone === 'hand' && card.owner !== identity?.seat) ?? [];
   const discards = match?.table.cards.filter(card => card.zone === 'discard') ?? [];
 
   return <div className="app multiplayer-shell">
@@ -322,6 +324,7 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
         <label className="inline-check"><input disabled={!isOwner} type="checkbox" checked={room.settings.isPublic} onChange={e => socket?.emit('room:settings', { isPublic: e.target.checked })}/> Public room</label>
         <label className="inline-check"><input disabled={!isOwner} type="checkbox" checked={room.settings.allowSpectators} onChange={e => socket?.emit('room:settings', { allowSpectators: e.target.checked })}/> Allow spectators</label>
         <label className="inline-check"><input disabled={!isOwner} type="checkbox" checked={room.settings.readyCheck} onChange={e => socket?.emit('room:settings', { readyCheck: e.target.checked })}/> Require ready check</label>
+        {room.settings.format === '2v2' && <label className="inline-check"><input disabled={!isOwner} type="checkbox" checked={room.settings.shareTeamHands} onChange={e => socket?.emit('room:settings', { shareTeamHands: e.target.checked })}/> Share teammate hands</label>}
         {isOwner && <div className="button-row"><button className="primary" onClick={() => socket?.emit('room:start', { force: false })}>Start</button><button onClick={() => socket?.emit('room:start', { force: true })}>Force start</button></div>}
       </section>
 
@@ -427,6 +430,11 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
         {!identity?.spectator && <section className="hand-strip">
           <strong>Your hand</strong>
           <div className="hand-cards">{ownHand.map(card => <button key={card.id} className={`mini-card ${selected === card.id ? 'selected' : ''}`} onMouseEnter={() => setHovered(card.id)} onMouseLeave={() => setHovered('')} onClick={() => { setSelected(card.id); setPinned(card.id); }} onDoubleClick={() => emitAction({ type: 'to-zone', id: card.id, zone: 'field' })}><span>✦</span>{card.label}</button>)}</div>
+        </section>}
+
+        {!identity?.spectator && teammateHands.length > 0 && <section className="hand-strip teammate-hand-strip">
+          <strong>Teammate hand · read-only</strong>
+          <div className="hand-cards">{teammateHands.map(card => <button key={card.id} className="mini-card locked" onMouseEnter={() => setHovered(card.id)} onMouseLeave={() => setHovered('')} onClick={() => setPinned(card.id)}><span>✦</span>{card.label}</button>)}</div>
         </section>}
       </main>
 
