@@ -17,8 +17,8 @@ describe('interactive custom zones', () => {
     let table = createInitialTable([1, 2]);
     table = applyAction(table, { type: 'draw', player: 1 }, allowed, stackable);
     const card = table.cards.find(item => item.owner === 1 && item.zone === 'hand')!;
-    table = applyAction(table, { type: 'to-zone', id: card.id, zone: 'command-post', actor: 1 }, allowed, stackable);
-    expect(table.cards.find(item => item.id === card.id)?.zone).toBe('command-post');
+    table = applyAction(table, { type: 'to-zone', id: card.id, zone: 'base', actor: 1 }, allowed, stackable);
+    expect(table.cards.find(item => item.id === card.id)?.zone).toBe('base');
   });
 
   it('rejects zones not declared by the active module', () => {
@@ -33,9 +33,9 @@ describe('interactive custom zones', () => {
     let table = createInitialTable([1, 2]);
     table = applyAction(table, { type: 'draw', player: 1 }, allowed, stackable);
     const card = table.cards.find(item => item.owner === 1 && item.zone === 'hand')!;
-    table = applyAction(table, { type: 'to-zone', id: card.id, zone: 'command-post', actor: 1 }, allowed, stackable);
+    table = applyAction(table, { type: 'to-zone', id: card.id, zone: 'base', actor: 1 }, allowed, stackable);
     const view = projectTable(table, 2, [2], publicZones);
-    expect(view.cards.some(item => item.zone === 'command-post' && item.id === card.id)).toBe(true);
+    expect(view.cards.some(item => item.zone === 'base' && item.id === card.id)).toBe(true);
   });
 
   it('migrates legacy v3 saves to v4', () => {
