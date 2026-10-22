@@ -356,8 +356,8 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
         const rect = boardRef.current?.getBoundingClientRect();
         if (!rect || !pointInRect({ x: event.clientX, y: event.clientY }, rect)) return;
         const point = toCanonicalPoint({
-          x: ((event.clientX - rect.left - 43) / rect.width) * 1000,
-          y: ((event.clientY - rect.top - 58) / rect.height) * 600,
+          x: ((event.clientX - rect.left - event.currentTarget.offsetWidth / 2) / rect.width) * 1000,
+          y: ((event.clientY - rect.top - event.currentTarget.offsetHeight / 2) / rect.height) * 600,
         }, perspectiveViewer, room?.settings.format ?? '1v1');
         emitAction({
           type: 'move',
@@ -754,7 +754,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
 
         {dragPreview && <div
           className="drag-card-ghost"
-          style={{ left: dragPreview.x - 43, top: dragPreview.y - 58 }}
+          style={{ left: dragPreview.x, top: dragPreview.y, transform: 'translate(-50%,-50%) rotate(2deg) scale(1.04)' }}
           aria-hidden="true"
         >
           <span className="card-symbol">✦</span>
