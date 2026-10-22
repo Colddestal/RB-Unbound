@@ -95,7 +95,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
           return;
         }
         setModuleKey(modulePackageKey(required.module));
-        setTable(parsed.table);
+        setTable(migrateTableState(parsed.table) ?? parsed.table);
       } else {
         const migrated = migrateTableState(parsed);
         if (!migrated) throw Error('Invalid table file');
