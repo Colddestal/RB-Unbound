@@ -321,3 +321,17 @@ The Frontier Skirmish proof module uses this for its two shared objective slots.
 Visible cards also support a PC right-click context menu. The menu always permits inspection, while mutation actions are shown only for cards the current player controls. Common actions include tap/untap, flip, return to Hand, move to Trash/Discard, move to the Main Deck, unstack, and move to other non-subzone module destinations. Multiplayer still sends every mutation through the normal authoritative action path; right-click is only another input surface and does not bypass server permissions.
 
 Tabletop card dimensions are responsive and smaller than the initial prototype. Drag placement and selection geometry now derive from the rendered card size instead of assuming a fixed 86×117 card.
+
+
+## Resizable non-overlapping tabletop dock
+
+The left Card Info / Chat / History surface and the tabletop board now occupy separate grid columns. The dock is never layered over the board on normal PC layouts.
+
+The dock column is horizontally resizable from 190px to 420px using the divider on its right edge. The selected width is stored in localStorage and reused by Local Sandbox and Multiplayer. Dragging right makes the dock wider; dragging left gives more room back to the tabletop. Double-clicking the divider resets it to 270px.
+
+The divider is keyboard accessible:
+- Left / Right arrows resize in small steps
+- Home selects the minimum width
+- End selects the maximum width
+
+Below the narrow-screen fallback breakpoint the layout stacks and the resize handle is hidden. No module coordinates or tabletop zone geometry are changed by this feature.
