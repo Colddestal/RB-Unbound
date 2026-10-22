@@ -251,8 +251,8 @@ export const frontierSkirmishModule: GameModule = {
       role: 'main-deck',
       pile: { drawToZoneId: 'hand', shuffle: true },
       seatPositions: {
-        '1': { x: 900, y: 425 },
-        '2': { x: 100, y: 175 },
+        '1': { x: 75, y: 485 },
+        '2': { x: 75, y: 145 },
       },
       size: { width: 70, height: 88 },
     },
@@ -320,7 +320,7 @@ export const frontierSkirmishModule: GameModule = {
       role: 'leader',
       capacity: 1,
       seatPositions: {
-        '1': { x: 75, y: 425 },
+        '1': { x: 925, y: 515 },
         '2': { x: 925, y: 175 },
       },
       size: { width: 62, height: 82 },
@@ -335,8 +335,8 @@ export const frontierSkirmishModule: GameModule = {
       role: 'champion',
       capacity: 1,
       seatPositions: {
-        '1': { x: 175, y: 425 },
-        '2': { x: 825, y: 175 },
+        '1': { x: 925, y: 420 },
+        '2': { x: 925, y: 80 },
       },
       size: { width: 62, height: 82 },
     },
@@ -350,8 +350,8 @@ export const frontierSkirmishModule: GameModule = {
       role: 'resource-deck',
       pile: { drawToZoneId: 'resources', shuffle: true },
       seatPositions: {
-        '1': { x: 85, y: 530 },
-        '2': { x: 915, y: 70 },
+        '1': { x: 75, y: 390 },
+        '2': { x: 75, y: 50 },
       },
       size: { width: 70, height: 82 },
     },
@@ -364,8 +364,8 @@ export const frontierSkirmishModule: GameModule = {
       behavior: 'pile',
       role: 'discard',
       seatPositions: {
-        '1': { x: 915, y: 530 },
-        '2': { x: 85, y: 70 },
+        '1': { x: 75, y: 565 },
+        '2': { x: 75, y: 225 },
       },
       size: { width: 70, height: 82 },
     },
