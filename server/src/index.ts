@@ -1,4 +1,4 @@
-import { randomBytes, randomInt, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { Server, type Socket } from 'socket.io';
 import {
@@ -26,9 +26,15 @@ import {
   type TableAction,
   type TableState,
 } from '@rb-unbound/tabletop';
+import {
+  loadSnapshot,
+  saveSnapshot,
+  snapshotPath,
+  type PersistenceSnapshot,
+} from './persistence.js';
 
 type Session = {
-  token: string;
+  tokenHash: string;
   memberId: string;
   displayName: string;
   roomCode: string;
@@ -65,6 +71,9 @@ const matches = new Map<string, MatchRecord>();
 const sessions = new Map<string, Session>();
 const socketSession = new Map<string, string>();
 
+let saveTimer: NodeJS.Timeout | undefined;
+let saveChain = Promise.resolve();
+
 function code(): string {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const candidate = randomBytes(4).toString('hex').slice(0, 6).toUpperCase();
@@ -75,6 +84,10 @@ function code(): string {
 
 function newSessionToken(): string {
   return randomBytes(32).toString('base64url');
+}
+
+function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
 }
 
 function safeName(value: unknown): string | null {
@@ -88,13 +101,55 @@ function safeFormat(value: unknown): MatchFormat | undefined {
 }
 
 function currentSession(socket: Socket): Session | undefined {
-  const token = socketSession.get(socket.id);
-  return token ? sessions.get(token) : undefined;
+  const tokenHash = socketSession.get(socket.id);
+  return tokenHash ? sessions.get(tokenHash) : undefined;
 }
 
 function socketForMember(memberId: string): Socket | undefined {
   const session = [...sessions.values()].find(item => item.memberId === memberId);
   return session?.connectedSocketId ? io.sockets.sockets.get(session.connectedSocketId) : undefined;
+}
+
+function makeSnapshot(): PersistenceSnapshot {
+  return {
+    schemaVersion: 1,
+    savedAt: new Date().toISOString(),
+    rooms: [...rooms.values()],
+    matches: [...matches.entries()].map(([roomCode, match]) => ({
+      roomCode,
+      revision: match.revision,
+      table: match.table,
+      lastActionSequence: [...match.lastActionSequence.entries()],
+    })),
+    sessions: [...sessions.values()].map(session => ({
+      tokenHash: session.tokenHash,
+      memberId: session.memberId,
+      displayName: session.displayName,
+      roomCode: session.roomCode,
+      seat: session.seat,
+      spectator: session.spectator,
+      ...(session.connectedSocketId ? {} : { disconnectedAt: session.disconnectedAt ?? Date.now() }),
+    })),
+  };
+}
+
+function flushSnapshot(): Promise<void> {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = undefined;
+  }
+  const snapshot = makeSnapshot();
+  saveChain = saveChain
+    .catch(() => undefined)
+    .then(() => saveSnapshot(snapshot))
+    .catch(error => console.error('Failed to persist multiplayer snapshot:', error));
+  return saveChain;
+}
+
+function scheduleSave(): void {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { void flushSnapshot(); }, 75);
+  saveTimer.unref();
 }
 
 function publicRoom(room: RoomState) {
@@ -185,8 +240,9 @@ function toServerAction(table: TableState, seat: PlayerId, action: ClientTableAc
 
 function establishSession(socket: Socket, room: RoomState, displayName: string, memberId: string, seat?: PlayerId, spectator = false): Session {
   const token = newSessionToken();
+  const tokenHash = hashToken(token);
   const session: Session = {
-    token,
+    tokenHash,
     memberId,
     displayName,
     roomCode: room.code,
@@ -194,34 +250,43 @@ function establishSession(socket: Socket, room: RoomState, displayName: string, 
     spectator,
     connectedSocketId: socket.id,
   };
-  sessions.set(token, session);
-  socketSession.set(socket.id, token);
+  sessions.set(tokenHash, session);
+  socketSession.set(socket.id, tokenHash);
   socket.join(room.code);
   socket.emit('session:issued', { token, roomCode: room.code, seat, spectator });
   socket.emit('room:identity', { code: room.code, seat, spectator });
+  scheduleSave();
   return session;
 }
 
-function expireSession(token: string): void {
-  const session = sessions.get(token);
+function expireSession(tokenHash: string): void {
+  const session = sessions.get(tokenHash);
   if (!session || session.connectedSocketId) return;
+  const room = rooms.get(session.roomCode);
+  if (room?.status === 'active') return;
   if (!session.disconnectedAt || Date.now() - session.disconnectedAt < SESSION_TTL_MS) return;
 
-  const room = rooms.get(session.roomCode);
   if (room?.status === 'lobby') {
     const updated = leaveRoom(room, session.memberId);
     rooms.set(room.code, updated);
     emitRoom(updated);
   }
-  sessions.delete(token);
+  sessions.delete(tokenHash);
+  scheduleSave();
+}
+
+function scheduleExpiry(tokenHash: string, disconnectedAt: number): void {
+  const remaining = Math.max(1000, SESSION_TTL_MS - (Date.now() - disconnectedAt) + 1000);
+  const timeout = setTimeout(() => expireSession(tokenHash), remaining);
+  timeout.unref();
 }
 
 function markDisconnected(socket: Socket): void {
-  const token = socketSession.get(socket.id);
+  const tokenHash = socketSession.get(socket.id);
   socketSession.delete(socket.id);
-  if (!token) return;
+  if (!tokenHash) return;
 
-  const session = sessions.get(token);
+  const session = sessions.get(tokenHash);
   if (!session || session.connectedSocketId !== socket.id) return;
   session.connectedSocketId = undefined;
   session.disconnectedAt = Date.now();
@@ -229,8 +294,35 @@ function markDisconnected(socket: Socket): void {
   const room = rooms.get(session.roomCode);
   if (room) emitRoom(room);
 
-  const timeout = setTimeout(() => expireSession(token), SESSION_TTL_MS + 1000);
-  timeout.unref();
+  if (room?.status !== 'active') scheduleExpiry(tokenHash, session.disconnectedAt);
+  scheduleSave();
+}
+
+async function restoreState(): Promise<void> {
+  const snapshot = await loadSnapshot();
+  if (!snapshot) return;
+
+  for (const room of snapshot.rooms) rooms.set(room.code, room);
+  for (const record of snapshot.matches) {
+    if (!rooms.has(record.roomCode)) continue;
+    matches.set(record.roomCode, {
+      revision: record.revision,
+      table: record.table,
+      lastActionSequence: new Map(record.lastActionSequence),
+    });
+  }
+
+  const now = Date.now();
+  for (const saved of snapshot.sessions) {
+    const room = rooms.get(saved.roomCode);
+    if (!room) continue;
+    const disconnectedAt = saved.disconnectedAt ?? now;
+    const session: Session = { ...saved, disconnectedAt };
+    sessions.set(saved.tokenHash, session);
+    if (room.status !== 'active') scheduleExpiry(saved.tokenHash, disconnectedAt);
+  }
+
+  console.log(`Restored ${rooms.size} rooms, ${matches.size} matches and ${sessions.size} sessions from ${snapshotPath()}`);
 }
 
 io.on('connection', socket => {
@@ -238,12 +330,14 @@ io.on('connection', socket => {
 
   socket.on('session:resume', (payload: { token?: unknown } = {}) => {
     if (typeof payload.token !== 'string' || payload.token.length > 100) return fail(socket, 'Invalid session token.');
-    const session = sessions.get(payload.token);
+    const tokenHash = hashToken(payload.token);
+    const session = sessions.get(tokenHash);
     if (!session) return socket.emit('session:invalid');
 
     const room = rooms.get(session.roomCode);
     if (!room) {
-      sessions.delete(payload.token);
+      sessions.delete(tokenHash);
+      scheduleSave();
       return socket.emit('session:invalid');
     }
 
@@ -253,12 +347,11 @@ io.on('connection', socket => {
 
     session.connectedSocketId = socket.id;
     session.disconnectedAt = undefined;
-    socketSession.set(socket.id, session.token);
+    socketSession.set(socket.id, tokenHash);
     socket.join(room.code);
 
     const lastActionSequence = matches.get(room.code)?.lastActionSequence.get(session.memberId) ?? 0;
     socket.emit('session:resumed', {
-      token: session.token,
       roomCode: room.code,
       seat: session.seat,
       spectator: session.spectator,
@@ -268,6 +361,7 @@ io.on('connection', socket => {
     socket.emit('room:update', publicRoom(room));
     if (room.status === 'active') emitMatchViews(room);
     emitRoom(room);
+    scheduleSave();
   });
 
   socket.on('room:create', (payload: { displayName?: unknown; roomName?: unknown; format?: unknown } = {}) => {
@@ -284,6 +378,7 @@ io.on('connection', socket => {
     establishSession(socket, room, displayName, memberId, 1, false);
     socket.emit('room:created', { code: room.code });
     emitRoom(room);
+    scheduleSave();
   });
 
   socket.on('room:join-seat', (payload: { code?: unknown; displayName?: unknown; seat?: unknown } = {}) => {
@@ -303,6 +398,7 @@ io.on('connection', socket => {
     rooms.set(roomCode, updated);
     establishSession(socket, updated, displayName, memberId, seat as PlayerId, false);
     emitRoom(updated);
+    scheduleSave();
   });
 
   socket.on('room:join-spectator', (payload: { code?: unknown; displayName?: unknown } = {}) => {
@@ -322,6 +418,7 @@ io.on('connection', socket => {
     establishSession(socket, updated, displayName, memberId, undefined, true);
     emitRoom(updated);
     if (updated.status === 'active') emitMatchViews(updated);
+    scheduleSave();
   });
 
   socket.on('room:ready', (payload: { ready?: unknown } = {}) => {
@@ -332,6 +429,7 @@ io.on('connection', socket => {
     const updated = setReady(room, session.memberId, payload.ready);
     rooms.set(room.code, updated);
     emitRoom(updated);
+    scheduleSave();
   });
 
   socket.on('room:settings', (payload: Partial<RoomSettings> = {}) => {
@@ -357,6 +455,7 @@ io.on('connection', socket => {
     if (updated === room) return fail(socket, 'Only the room owner can change unlocked lobby settings.');
     rooms.set(room.code, updated);
     emitRoom(updated);
+    scheduleSave();
   });
 
   socket.on('room:start', (payload: { force?: unknown } = {}) => {
@@ -381,6 +480,7 @@ io.on('connection', socket => {
     emitRoom(updated);
     io.to(room.code).emit('room:started', { code: room.code, format: room.settings.format, ruleset: room.settings.ruleset });
     emitMatchViews(updated);
+    scheduleSave();
   });
 
   socket.on('match:action', (payload: { sequence?: unknown; action?: unknown } = {}) => {
@@ -412,6 +512,7 @@ io.on('connection', socket => {
     match.revision += 1;
     match.lastActionSequence.set(session.memberId, sequence);
     emitMatchViews(room);
+    scheduleSave();
   });
 
   socket.on('match:request-state', () => {
@@ -437,6 +538,7 @@ io.on('connection', socket => {
     rooms.set(room.code, updated);
     io.to(room.code).emit('chat:message', updated.chat.at(-1));
     emitRoom(updated);
+    scheduleSave();
   });
 
   socket.on('room:leave', () => {
@@ -448,15 +550,27 @@ io.on('connection', socket => {
       rooms.set(room.code, updated);
       emitRoom(updated);
     }
-    sessions.delete(session.token);
+    sessions.delete(session.tokenHash);
     socketSession.delete(socket.id);
     socket.leave(session.roomCode);
     socket.emit('session:cleared');
+    scheduleSave();
   });
 
   socket.on('disconnect', () => markDisconnected(socket));
 });
 
+async function shutdown(signal: string): Promise<void> {
+  console.log(`${signal}: saving multiplayer state before shutdown...`);
+  await flushSnapshot();
+  process.exit(0);
+}
+
+process.once('SIGINT', () => { void shutdown('SIGINT'); });
+process.once('SIGTERM', () => { void shutdown('SIGTERM'); });
+
+await restoreState();
+
 httpServer.listen(3001, '127.0.0.1', () => {
-  console.log('RB Unbound development multiplayer server on http://127.0.0.1:3001');
+  console.log(`RB Unbound development multiplayer server on http://127.0.0.1:3001 (snapshot: ${snapshotPath()})`);
 });
