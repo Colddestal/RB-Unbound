@@ -67,7 +67,7 @@ export function Multiplayer() {
       setSelected(current => payload.table.cards.some(card => card.id === current) ? current : '');
     });
 
-    return () => client.disconnect();
+    return () => { client.disconnect(); };
   }, []);
 
   const ownSeat = identity?.seat ? room?.seats.find(seat => seat.seat === identity.seat) : undefined;
