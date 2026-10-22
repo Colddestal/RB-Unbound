@@ -244,9 +244,9 @@ export const genericDuelModule: GameModule = {
 export const frontierSkirmishModule: GameModule = {
   schemaVersion: 1,
   id: 'frontier-skirmish',
-  name: 'Frontier Skirmish',
+  name: 'Full Mat Prototype',
   version: '1.0.0',
-  description: 'Original location-based proof module with a wide mirrored mat, two objectives, player bases, separate resource/main piles and dedicated leader slots.',
+  description: 'Location-based proof module with a mirrored mat, Legend and Champion slots, Main and Rune piles, player Bases, Runes rows and two shared Battlefields.',
   supportedFormats: ['1v1', '2v2'],
   zones: [
     {
