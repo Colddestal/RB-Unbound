@@ -194,7 +194,7 @@ export function isClientTableAction(value: unknown): value is ClientTableAction 
   if (action.type === 'draw' || action.type === 'shuffle') return true;
   if (typeof action.id !== 'string' || action.id.length > 100) return false;
   if (action.type === 'rotate' || action.type === 'flip' || action.type === 'unstack') return true;
-  if (action.type === 'move') return Number.isFinite(action.x) && Number.isFinite(action.y);
+  if (action.type === 'move') return typeof action.x === 'number' && Number.isFinite(action.x) && typeof action.y === 'number' && Number.isFinite(action.y);
   if (action.type === 'to-zone') return action.zone === 'deck' || action.zone === 'hand' || action.zone === 'field' || action.zone === 'discard';
   return action.type === 'stack' && typeof action.targetId === 'string' && action.targetId.length <= 100;
 }
