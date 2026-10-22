@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react';
 import { TabletopDock, type DockHistoryEntry } from './tabletop-dock';
 import { DeckTools } from './deck-tools';
 import { DeckPile } from './deck-pile';
+import { CardContextMenu, type CardContextState } from './card-context-menu';
 import { localHandDropRect, pointInRect } from './drag-drop';
 import { toCanonicalPoint, toViewerPoint, toViewerSeat } from './board-perspective';
 import { actionForCode, displayKey, type KeyBindings } from './controls';
@@ -71,6 +72,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
   const [history, setHistory] = useState<DockHistoryEntry[]>([]);
   const [dragPreview, setDragPreview] = useState<{ id: string; label: string; x: number; y: number } | null>(null);
   const [fieldDragId, setFieldDragId] = useState('');
+  const [cardContext, setCardContext] = useState<CardContextState | null>(null);
   const historyCounterRef = useRef(0);
   const fileRef = useRef<HTMLInputElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
@@ -94,6 +96,13 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
   const inspectorCard = table.cards.find(card => card.id === (hovered || pinned));
   const inspectorPinned = Boolean(pinned && !hovered);
   const ownFieldCards = table.cards.filter(card => card.owner === viewer && card.zone === 'field' && card.id !== selected);
+  const contextCard = cardContext ? table.cards.find(card => card.id === cardContext.cardId) : undefined;
+  const handZoneId = activeModule.zones.find(zone => zone.kind === 'hand')?.id;
+  const discardZoneId = activeModule.zones.find(zone => zone.kind === 'discard')?.id;
+  const deckZoneId = activeModule.zones.find(zone => zone.kind === 'deck')?.id;
+  const contextZones = activeModule.zones
+    .filter(zone => zone.behavior !== 'subzone')
+    .map(zone => ({ id: zone.id, label: zone.label }));
 
   const cardsByPlayer = useMemo(() => ({
     1: table.cards.filter(card => card.owner === 1),
@@ -222,6 +231,38 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
     addLocalHistory(`Player ${viewer} unstacked ${selectedCard.label}.`);
   };
 
+  const openCardContext = (event: ReactMouseEvent, card: Card) => {
+    event.preventDefault();
+    setSelected(card.owner === viewer ? card.id : '');
+    setMultiSelected([]);
+    setPinned(card.id);
+    setCardContext({ cardId: card.id, x: event.clientX, y: event.clientY });
+  };
+
+  const moveContextCard = (zone: string) => {
+    if (!contextCard || contextCard.owner !== viewer) return;
+    execute({ type: 'to-zone', id: contextCard.id, zone, actor: viewer });
+    addLocalHistory(`Player ${viewer} moved a card to ${zoneLabel(zone)}.`);
+  };
+
+  const rotateContextCard = () => {
+    if (!contextCard || contextCard.owner !== viewer) return;
+    execute({ type: 'rotate', id: contextCard.id, actor: viewer });
+    addLocalHistory(`Player ${viewer} changed a card's tap state.`);
+  };
+
+  const flipContextCard = () => {
+    if (!contextCard || contextCard.owner !== viewer) return;
+    execute({ type: 'flip', id: contextCard.id, actor: viewer });
+    addLocalHistory(`Player ${viewer} flipped a card.`);
+  };
+
+  const unstackContextCard = () => {
+    if (!contextCard?.stackOn || contextCard.owner !== viewer) return;
+    execute({ type: 'unstack', id: contextCard.id, actor: viewer });
+    addLocalHistory(`Player ${viewer} unstacked a card.`);
+  };
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -320,6 +361,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
         }
         setPinned(card.id);
       }}
+      onContextMenu={event => openCardContext(event, card)}
       onDoubleClick={() => {
         if (owned && mode === 'hand') {
           execute({ type: 'to-zone', id: card.id, zone: 'field', actor: viewer });
@@ -349,8 +391,8 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
         const rect = boardRef.current?.getBoundingClientRect();
         if (!rect || !pointInRect({ x: event.clientX, y: event.clientY }, rect)) return;
         const point = toCanonicalPoint({
-          x: ((event.clientX - rect.left - 43) / rect.width) * 1000,
-          y: ((event.clientY - rect.top - 58) / rect.height) * 600,
+          x: ((event.clientX - rect.left - event.currentTarget.offsetWidth / 2) / rect.width) * 1000,
+          y: ((event.clientY - rect.top - event.currentTarget.offsetHeight / 2) / rect.height) * 600,
         }, viewer, '1v1');
         execute({
           type: 'move',
@@ -446,26 +488,34 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       {field.map((card, index) => renderCard(card, index, field, 'field'))}
       {activeModule.zones.filter(zone => zone.kind === 'custom').flatMap(zone => {
         const cards = table.cards.filter(card => card.owner === player && card.zone === zone.id);
-        return cards.map((card, index) => {
-          const position = zoneAreaPosition(zone, player) ?? { x: 500, y: 300 };
-          const styleOffset = index * 10;
-          return <button
-            key={card.id}
-            className={`card custom-zone-card ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${card.faceUp ? '' : `back back-${cardBack.pattern}`}`}
-            style={{
-              left: `calc(${position.x / 10}% + ${styleOffset}px)`,
-              top: `calc(${position.y / 6}% + ${styleOffset}px)`,
-              transform: `translate(-50%,-50%) rotate(${card.rotation}deg)`,
-              zIndex: 30 + index,
-            }}
-            onMouseEnter={() => setHovered(card.id)}
-            onMouseLeave={() => setHovered('')}
-            onClick={() => { setSelected(card.id); setMultiSelected([]); setPinned(card.id); }}
-          >
-            <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span>
-            <span>{card.faceUp ? card.label : 'Hidden card'}</span>
-            <small>P{card.owner} · {zone.label}</small>
-          </button>;
+        return cards.flatMap((card, index) => {
+          const rawPositions = !zone.ownerScoped && zone.displayCopies?.length
+            ? zone.displayCopies
+            : [zoneAreaPosition(zone, player) ?? { x: 500, y: 300 }];
+          return rawPositions.map((rawPosition, copyIndex) => {
+            const position = !zone.ownerScoped && zone.displayCopies?.length
+              ? toViewerPoint(rawPosition, viewer, '1v1')
+              : rawPosition;
+            const styleOffset = index * 7;
+            return <button
+              key={`${card.id}-${copyIndex}`}
+              className={`card custom-zone-card ${zone.displayCopies?.length ? 'shared-card-copy' : ''} ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${card.faceUp ? '' : `back back-${cardBack.pattern}`}`}
+              style={{
+                left: `calc(${position.x / 10}% + ${styleOffset}px)`,
+                top: `calc(${position.y / 6}% + ${styleOffset}px)`,
+                transform: `translate(-50%,-50%) rotate(${card.rotation}deg)`,
+                zIndex: 30 + index,
+              }}
+              onMouseEnter={() => setHovered(card.id)}
+              onMouseLeave={() => setHovered('')}
+              onClick={() => { setSelected(card.owner === viewer ? card.id : ''); setMultiSelected([]); setPinned(card.id); }}
+              onContextMenu={event => openCardContext(event, card)}
+            >
+              <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span>
+              <span>{card.faceUp ? card.label : 'Hidden card'}</span>
+              <small>{zone.label}</small>
+            </button>;
+          });
         });
       })}
     </>;
@@ -570,12 +620,15 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
           const right = Math.max(selectionBox.startX, selectionBox.endX);
           const top = Math.min(selectionBox.startY, selectionBox.endY);
           const bottom = Math.max(selectionBox.startY, selectionBox.endY);
+          const renderedCard = event.currentTarget.querySelector<HTMLElement>('.card');
+          const cardHalfWidth = (renderedCard?.offsetWidth ?? 64) / 2;
+          const cardHalfHeight = (renderedCard?.offsetHeight ?? 88) / 2;
           const ids = table.cards
             .filter(card => card.owner === viewer && card.zone === 'field')
             .filter(card => {
               const point = toViewerPoint({ x: card.x, y: card.y }, viewer, '1v1');
-              const cx = (point.x / 1000) * rect.width + 43;
-              const cy = (point.y / 600) * rect.height + 58;
+              const cx = (point.x / 1000) * rect.width + cardHalfWidth;
+              const cy = (point.y / 600) * rect.height + cardHalfHeight;
               return cx >= left && cx <= right && cy >= top && cy <= bottom;
             })
             .map(card => card.id);
@@ -624,12 +677,28 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
 
     {dragPreview && <div
       className="drag-card-ghost"
-      style={{ left: dragPreview.x - 43, top: dragPreview.y - 58 }}
+      style={{ left: dragPreview.x, top: dragPreview.y, transform: 'translate(-50%,-50%) rotate(2deg) scale(1.04)' }}
       aria-hidden="true"
     >
       <span className="card-symbol">✦</span>
       <span>{dragPreview.label}</span>
     </div>}
+
+    {cardContext && contextCard && <CardContextMenu
+      state={cardContext}
+      card={contextCard}
+      canAct={contextCard.owner === viewer}
+      zones={contextZones}
+      handZoneId={handZoneId}
+      discardZoneId={discardZoneId}
+      deckZoneId={deckZoneId}
+      onInspect={() => setPinned(contextCard.id)}
+      onRotate={rotateContextCard}
+      onFlip={flipContextCard}
+      onMove={moveContextCard}
+      onUnstack={unstackContextCard}
+      onClose={() => setCardContext(null)}
+    />}
 
     <DeckTools module={activeModule} catalog={activePackage.cards} onLoadDeck={loadDeckForPlayerOne} />
 

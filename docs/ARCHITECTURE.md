@@ -310,3 +310,14 @@ Seat 2 uses the existing 180-degree viewer transform, so either 1v1 player sees 
 The left Card Info / Chat / History dock remains outside the board coordinate space. On normal PC widths the app reserves 270px for that dock and a minimum wide tabletop column, rather than overlaying the dock on game zones.
 
 This proof layout intentionally uses original module labels and assets. Game-specific names/artwork remain separate from the generic engine and authorization boundary.
+
+
+## Shared-card visual mirrors and card context actions
+
+A module zone may optionally declare `displayCopies`: additional board coordinates used to render one underlying shared-zone card in more than one place. This is a presentation-only feature. The tabletop state still contains one card ID in one zone, so selecting, inspecting, moving, flipping or otherwise acting on any rendered copy affects the same authoritative card.
+
+The Frontier Skirmish proof module uses this for its two shared objective slots. Each chosen objective can be shown once toward each player half while the smaller center slot remains the shared logical location. Viewer perspective transforms apply to every copy, so the presentation remains mirrored in 1v1.
+
+Visible cards also support a PC right-click context menu. The menu always permits inspection, while mutation actions are shown only for cards the current player controls. Common actions include tap/untap, flip, return to Hand, move to Trash/Discard, move to the Main Deck, unstack, and move to other non-subzone module destinations. Multiplayer still sends every mutation through the normal authoritative action path; right-click is only another input surface and does not bypass server permissions.
+
+Tabletop card dimensions are responsive and smaller than the initial prototype. Drag placement and selection geometry now derive from the rendered card size instead of assuming a fixed 86×117 card.

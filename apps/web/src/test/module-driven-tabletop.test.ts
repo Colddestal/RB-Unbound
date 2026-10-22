@@ -30,6 +30,7 @@ describe('built-in module rendering data', () => {
 
     expect(genericDeck?.seatPositions?.['1']).toEqual({ x: 70, y: 470 });
     expect(frontierDeck?.seatPositions?.['1']).toEqual({ x: 900, y: 425 });
+    expect(frontierDeck?.size).toEqual({ width: 70, height: 88 });
     expect(genericDeck?.seatPositions?.['1']).not.toEqual(frontierDeck?.seatPositions?.['1']);
   });
 
@@ -40,10 +41,10 @@ describe('built-in module rendering data', () => {
       label: 'Base',
       behavior: 'location',
       ownerScoped: true,
-      size: { width: 590, height: 70 },
+      size: { width: 600, height: 80 },
       seatPositions: {
-        '1': { x: 500, y: 425 },
-        '2': { x: 500, y: 175 },
+        '1': { x: 500, y: 410 },
+        '2': { x: 500, y: 190 },
       },
     });
   });
@@ -58,19 +59,29 @@ describe('built-in module rendering data', () => {
       role: 'combat-area',
       ownerScoped: false,
       defaultPosition: { x: 500, y: 300 },
-      size: { width: 780, height: 160 },
+      size: { width: 780, height: 138 },
     });
     expect(objectiveA).toMatchObject({
       behavior: 'slot',
       role: 'objective',
       capacity: 1,
       defaultPosition: { x: 285, y: 300 },
+      displayCopies: [
+        { x: 285, y: 258 },
+        { x: 285, y: 342 },
+      ],
+      size: { width: 78, height: 54 },
     });
     expect(objectiveB).toMatchObject({
       behavior: 'slot',
       role: 'objective',
       capacity: 1,
       defaultPosition: { x: 715, y: 300 },
+      displayCopies: [
+        { x: 715, y: 258 },
+        { x: 715, y: 342 },
+      ],
+      size: { width: 78, height: 54 },
     });
   });
 
@@ -78,9 +89,10 @@ describe('built-in module rendering data', () => {
     const hand = frontierSkirmishModule.zones.find(zone => zone.id === 'hand');
     const resources = frontierSkirmishModule.zones.find(zone => zone.id === 'resources');
 
-    expect(hand?.seatPositions?.['1']).toEqual({ x: 500, y: 555 });
-    expect(hand?.seatPositions?.['2']).toEqual({ x: 500, y: 45 });
+    expect(hand?.seatPositions?.['1']).toEqual({ x: 500, y: 560 });
+    expect(hand?.seatPositions?.['2']).toEqual({ x: 500, y: 40 });
     expect(resources?.seatPositions?.['1']).toEqual({ x: 500, y: 485 });
     expect(resources?.seatPositions?.['2']).toEqual({ x: 500, y: 115 });
+    expect(resources?.size).toEqual({ width: 540, height: 70 });
   });
 });
