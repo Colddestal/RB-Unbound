@@ -116,3 +116,32 @@ export const genericDuelModule: GameModule = {
     { id: 'tags', label: 'Tags', type: 'tags' },
   ],
 };
+
+
+export const frontierSkirmishModule: GameModule = {
+  schemaVersion: 1,
+  id: 'frontier-skirmish',
+  name: 'Frontier Skirmish',
+  version: '1.0.0',
+  description: 'Second original module used to prove that RB Unbound presentation can swap without core tabletop changes.',
+  supportedFormats: ['1v1', '2v2'],
+  zones: [
+    { id: 'deck', label: 'Supply', kind: 'deck', visibility: 'hidden', ownerScoped: true, defaultPosition: { x: 90, y: 500 } },
+    { id: 'hand', label: 'Orders', kind: 'hand', visibility: 'owner', ownerScoped: true },
+    { id: 'field', label: 'Frontier', kind: 'field', visibility: 'public', ownerScoped: false, stackable: true },
+    { id: 'discard', label: 'Scrapyard', kind: 'discard', visibility: 'public', ownerScoped: true, defaultPosition: { x: 850, y: 500 } },
+  ],
+  cardBacks: [
+    { id: 'frontier-stripes', label: 'Frontier Stripes', pattern: 'stripes' },
+  ],
+  cardFields: [
+    { id: 'class', label: 'Class', type: 'text' },
+    { id: 'power', label: 'Power', type: 'number' },
+    { id: 'tags', label: 'Tags', type: 'tags' },
+  ],
+};
+
+export const builtInGameModules: GameModule[] = [
+  genericDuelModule,
+  frontierSkirmishModule,
+];
