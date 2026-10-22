@@ -458,6 +458,24 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
             height: Math.abs(selectionBox.endY - selectionBox.startY),
           }} />}
           {fieldCards.map(renderFieldCard)}
+          {activeModule.zones.filter(zone => zone.kind === 'custom').flatMap(zone => {
+            const position = zone.defaultPosition ?? { x: 500, y: 300 };
+            return match.table.cards.filter(card => card.zone === zone.id).map((card, index) => {
+              const owned = identity?.seat === card.owner;
+              return <button
+                key={card.id}
+                className={`card custom-zone-card ${selected === card.id ? 'selected' : ''} ${card.faceUp ? '' : `back back-${cardBack.pattern}`} ${owned ? '' : 'locked'}`}
+                style={{ left: `calc(${position.x / 10}% + ${index * 10}px)`, top: `calc(${position.y / 6}% + ${index * 10}px)`, zIndex: 30 + index }}
+                onMouseEnter={() => setHovered(card.id)}
+                onMouseLeave={() => setHovered('')}
+                onClick={() => { setSelected(card.id); setMultiSelected([]); setPinned(card.id); }}
+              >
+                <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span>
+                <span>{card.label ?? 'Hidden card'}</span>
+                <small>P{card.owner} · {zone.label}</small>
+              </button>;
+            });
+          })}
           {discards.map((card, index) => <button key={card.id} className={`card discard-card ${card.faceUp ? '' : 'back'}`} style={{right:`${16 + card.owner * 18}px`, top:`${18 + index * 2}px`}} onMouseEnter={() => setHovered(card.id)} onMouseLeave={() => setHovered('')} onClick={() => { setSelected(card.id); setPinned(card.id); }}>
             <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span><span>{card.label ?? 'Hidden card'}</span><small>P{card.owner} · discard</small>
           </button>)}
