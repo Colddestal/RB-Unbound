@@ -29,7 +29,7 @@ export type TableAction =
   | { type: 'move'; id: string; x: number; y: number; actor: PlayerId }
   | { type: 'rotate'; id: string; actor: PlayerId }
   | { type: 'flip'; id: string; actor: PlayerId }
-  | { type: 'draw'; player: PlayerId; fromZone?: CardZone; toZone?: CardZone }
+  | { type: 'draw'; player: PlayerId; fromZone?: CardZone; toZone?: CardZone; faceUp?: boolean }
   | { type: 'to-zone'; id: string; zone: CardZone; actor: PlayerId }
   | { type: 'shuffle'; player: PlayerId; zone?: CardZone; orderedIds: string[] }
   | { type: 'stack'; id: string; targetId: string; actor: PlayerId }
@@ -97,24 +97,48 @@ export function createInitialTableForModule(
     .filter(card => card.moduleId === module.id && card.moduleVersion === module.version)
     .map(card => [card.id, card]));
 
+  const seededPiles = module.zones.filter(zone =>
+    zone.behavior === 'pile' &&
+    zone.id !== 'deck' &&
+    (zone.pile?.initialCount ?? 0) > 0
+  );
+
   return {
     version: 4,
-    cards: unique.flatMap(owner => deck.cards.flatMap((definitionId, index) => {
-      const definition = catalog.get(definitionId);
-      if (!definition) return [];
-      return [{
-        id: `p${owner}-${definitionId}-${index + 1}`,
-        definitionId,
-        label: definition.name,
-        owner,
-        zone: 'deck',
-        order: index,
-        x: 0,
-        y: 0,
-        rotation: 0,
-        faceUp: false,
-      } satisfies Card];
-    })),
+    cards: unique.flatMap(owner => {
+      const mainDeck = deck.cards.flatMap((definitionId, index) => {
+        const definition = catalog.get(definitionId);
+        if (!definition) return [];
+        return [{
+          id: `p${owner}-${definitionId}-${index + 1}`,
+          definitionId,
+          label: definition.name,
+          owner,
+          zone: 'deck',
+          order: index,
+          x: 0,
+          y: 0,
+          rotation: 0,
+          faceUp: false,
+        } satisfies Card];
+      });
+
+      const extraPiles = seededPiles.flatMap(zone =>
+        Array.from({ length: zone.pile?.initialCount ?? 0 }, (_, index) => ({
+          id: `p${owner}-${zone.id}-${index + 1}`,
+          label: `${zone.pile?.initialLabel ?? zone.label} ${index + 1}`,
+          owner,
+          zone: zone.id,
+          order: index,
+          x: 0,
+          y: 0,
+          rotation: 0,
+          faceUp: false,
+        } satisfies Card))
+      );
+
+      return [...mainDeck, ...extraPiles];
+    }),
   };
 }
 
@@ -151,7 +175,7 @@ export function applyAction(
     return {
       ...state,
       cards: state.cards.map(card => card.id === top.id
-        ? { ...card, zone: toZone, order: nextOrder(state.cards, action.player, toZone), faceUp: toZone === 'hand', stackOn: undefined }
+        ? { ...card, zone: toZone, order: nextOrder(state.cards, action.player, toZone), faceUp: action.faceUp ?? (toZone === 'hand'), stackOn: undefined }
         : card),
     };
   }
