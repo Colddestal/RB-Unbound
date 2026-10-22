@@ -11,9 +11,11 @@ import {
   applyAction,
   canManipulate,
   builtInModulePackages,
+  createInitialTableForModule,
   createTableSaveFile,
-  genericDuelModule,
-  initialTable,
+  frontierSkirmishModule,
+  pileCapabilities,
+  zoneBehavior,
   isTableSaveFile,
   migrateTableState,
   modulePackageKey,
@@ -36,8 +38,11 @@ function shuffled<T>(items: T[]): T[] {
 }
 
 export function Table({ bindings, modulePackages }: { bindings: KeyBindings; modulePackages: ModulePackage[] }) {
-  const [moduleKey, setModuleKey] = useState(modulePackageKey(genericDuelModule));
-  const activePackage = modulePackages.find(bundle => modulePackageKey(bundle.module) === moduleKey) ?? builtInModulePackages[0];
+  const defaultPackage = modulePackages.find(bundle => bundle.module.id === frontierSkirmishModule.id) ??
+    builtInModulePackages.find(bundle => bundle.module.id === frontierSkirmishModule.id) ??
+    builtInModulePackages[0];
+  const [moduleKey, setModuleKey] = useState(modulePackageKey(defaultPackage.module));
+  const activePackage = modulePackages.find(bundle => modulePackageKey(bundle.module) === moduleKey) ?? defaultPackage;
   const activeModule = activePackage.module;
   const zoneFor = (kind: Card['zone']) => activeModule.zones.find(zone => zone.kind === kind);
   const zoneLabel = (kind: Card['zone']) => zoneFor(kind)?.label ?? kind;
@@ -61,7 +66,8 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
     }
     return zone.defaultPosition ? toViewerPoint(zone.defaultPosition, viewer, '1v1') : undefined;
   };
-  const [table, setTable] = useState<TableState>(() => structuredClone(initialTable));
+  const [table, setTable] = useState<TableState>(() =>
+    createInitialTableForModule([1, 2], defaultPackage.module, defaultPackage.cards));
   const [viewer, setViewer] = useState<PlayerId>(1);
   const [selected, setSelected] = useState<string>('');
   const [multiSelected, setMultiSelected] = useState<string[]>([]);
@@ -147,18 +153,33 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
     }
   };
 
-  const drawCards = (player: PlayerId, count: number) => {
-    for (let index = 0; index < count; index += 1) execute({ type: 'draw', player });
-    addLocalHistory(`Player ${player} drew ${count === 1 ? 'a card' : `${count} cards`}.`);
+  const drawCards = (player: PlayerId, count: number, fromZone = 'deck') => {
+    const sourceZone = activeModule.zones.find(zone => zone.id === fromZone);
+    const capabilities = sourceZone ? pileCapabilities(activeModule, sourceZone) : undefined;
+    const destination = capabilities?.drawToZoneId
+      ? activeModule.zones.find(zone => zone.id === capabilities.drawToZoneId)
+      : undefined;
+    const faceUp = destination?.visibility === 'public' || zoneBehavior(destination ?? activeModule.zones.find(zone => zone.kind === 'hand')! ) === 'hand';
+
+    for (let index = 0; index < count; index += 1) {
+      execute({
+        type: 'draw',
+        player,
+        fromZone,
+        toZone: capabilities?.drawToZoneId ?? 'hand',
+        faceUp,
+      });
+    }
+    addLocalHistory(`Player ${player} drew ${count === 1 ? 'a card' : `${count} cards`} from ${sourceZone?.label ?? fromZone}.`);
   };
 
-  const shuffleDeck = (player: PlayerId) => {
+  const shufflePile = (player: PlayerId, zone = 'deck') => {
     const ids = table.cards
-      .filter(card => card.owner === player && card.zone === 'deck')
+      .filter(card => card.owner === player && card.zone === zone)
       .sort((a, b) => a.order - b.order)
       .map(card => card.id);
-    execute({ type: 'shuffle', player, orderedIds: shuffled(ids) });
-    addLocalHistory(`Player ${player} shuffled their deck.`);
+    execute({ type: 'shuffle', player, zone, orderedIds: shuffled(ids) });
+    addLocalHistory(`Player ${player} shuffled ${activeModule.zones.find(item => item.id === zone)?.label ?? zone}.`);
   };
 
   const loadDeckForPlayerOne = (deck: DeckDefinition) => {
@@ -448,6 +469,19 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
     </button>;
   };
 
+  const selectModule = (key: string) => {
+    const nextPackage = modulePackages.find(bundle => modulePackageKey(bundle.module) === key);
+    if (!nextPackage) return;
+    setModuleKey(key);
+    setTable(createInitialTableForModule([1, 2], nextPackage.module, nextPackage.cards));
+    setSelected('');
+    setMultiSelected([]);
+    setPinned('');
+    setStackTarget('');
+    setHistory([]);
+    setError('');
+  };
+
   const renderPlayer = (player: 1 | 2) => {
     const cards = cardsByPlayer[player];
     const deck = cards.filter(card => card.zone === 'deck').sort((a, b) => a.order - b.order);
@@ -472,9 +506,33 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
           } : {}),
           transform: 'translate(-50%,-50%)',
         }}
-        onDraw={count => drawCards(player, count)}
-        onShuffle={() => shuffleDeck(player)}
+        onDraw={count => drawCards(player, count, 'deck')}
+        onShuffle={() => shufflePile(player, 'deck')}
       />
+      {activeModule.zones
+        .filter(zone => zone.ownerScoped && zone.id !== 'deck' && zone.id !== 'discard' && zoneBehavior(zone) === 'pile' && zone.size)
+        .map(zone => {
+          const pileCards = cards.filter(card => card.zone === zone.id).sort((a, b) => a.order - b.order);
+          const position = zoneAreaPosition(zone, player);
+          if (!position || !zone.size) return null;
+          const capabilities = pileCapabilities(activeModule, zone);
+          return <DeckPile
+            key={`${zone.id}-pile-${player}`}
+            label={zone.label}
+            count={pileCards.length}
+            pattern={cardBack.pattern}
+            interactive={active && Boolean(capabilities.drawToZoneId)}
+            style={{
+              left: `${position.x / 10}%`,
+              top: `${position.y / 6}%`,
+              width: `${zone.size.width / 10}%`,
+              height: `${zone.size.height / 6}%`,
+              transform: 'translate(-50%,-50%)',
+            }}
+            onDraw={count => drawCards(player, count, zone.id)}
+            onShuffle={() => shufflePile(player, zone.id)}
+          />;
+        })}
       <div className="discard-zone" style={{
         left: `${zonePosition('discard', player).x / 10}%`,
         top: `${zonePosition('discard', player).y / 6}%`,
@@ -487,7 +545,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       {discard.slice(-6).map((card, index) => renderCard(card, index, discard, 'discard'))}
       {hand.map((card, index) => renderCard(card, index, hand, 'hand'))}
       {field.map((card, index) => renderCard(card, index, field, 'field'))}
-      {activeModule.zones.filter(zone => zone.kind === 'custom').flatMap(zone => {
+      {activeModule.zones.filter(zone => zone.kind === 'custom' && zoneBehavior(zone) !== 'pile').flatMap(zone => {
         const cards = table.cards.filter(card => card.owner === player && card.zone === zone.id);
         return cards.flatMap((card, index) => {
           const rawPositions = !zone.ownerScoped && zone.displayCopies?.length
@@ -531,7 +589,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
     <section className="viewer-bar">
       <strong>Local player view</strong>
       <label className="module-picker">Module
-        <select value={modulePackageKey(activeModule)} onChange={e => setModuleKey(e.target.value)}>
+        <select value={modulePackageKey(activeModule)} onChange={e => selectModule(e.target.value)}>
           {modulePackages.map(bundle => {
             const module: GameModule = bundle.module;
             return <option key={modulePackageKey(module)} value={modulePackageKey(module)}>{module.name} · v{module.version}</option>;
