@@ -18,13 +18,16 @@ import {
 } from '@rb-unbound/lobby';
 import {
   applyAction,
-  builtInGameModules,
+  builtInModulePackages,
   createInitialTableForModule,
   genericDuelModule,
+  isModulePackage,
+  modulePackageKey,
   isClientTableAction,
   projectTable,
   type ClientTableAction,
   type GameModule,
+  type ModulePackage,
   type PlayerId,
   type TableAction,
   type TableState,
@@ -75,11 +78,11 @@ const EVENT_LIMITS: Record<string, LimitRule> = {
 
 const EVENT_MAX_BYTES: Record<string, number> = {
   'session:resume': 256,
-  'room:create': 512,
+  'room:create': 220_000,
   'room:join-seat': 512,
   'room:join-spectator': 512,
   'room:ready': 128,
-  'room:settings': 2048,
+  'room:settings': 220_000,
   'room:start': 128,
   'room:leave': 64,
   'chat:send': 1200,
@@ -97,12 +100,15 @@ const io = new Server(httpServer, {
     origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
     methods: ['GET', 'POST'],
   },
-  maxHttpBufferSize: 20_000,
+  maxHttpBufferSize: 250_000,
   serveClient: false,
 });
 
 const rooms = new Map<string, RoomState>();
 const matches = new Map<string, MatchRecord>();
+const modulePackages = new Map<string, ModulePackage>(
+  builtInModulePackages.map(bundle => [modulePackageKey(bundle.module), bundle]),
+);
 const sessions = new Map<string, Session>();
 const socketSession = new Map<string, string>();
 
@@ -154,14 +160,29 @@ function safeFormat(value: unknown): MatchFormat | undefined {
   return value === '1v1' || value === '2v2' || value === 'ffa4' ? value : undefined;
 }
 
-function findModule(moduleId: unknown, moduleVersion?: unknown): GameModule | undefined {
+function findPackage(moduleId: unknown, moduleVersion?: unknown): ModulePackage | undefined {
   if (typeof moduleId !== 'string') return undefined;
-  return builtInGameModules.find(module =>
-    module.id === moduleId && (moduleVersion === undefined || module.version === moduleVersion));
+  for (const bundle of modulePackages.values()) {
+    if (bundle.module.id === moduleId && (moduleVersion === undefined || bundle.module.version === moduleVersion)) return bundle;
+  }
+  return undefined;
+}
+
+function registerPackage(value: unknown): ModulePackage | undefined {
+  if (!isModulePackage(value)) return undefined;
+  const key = modulePackageKey(value.module);
+  const builtIn = builtInModulePackages.find(bundle => modulePackageKey(bundle.module) === key);
+  if (builtIn) return builtIn;
+  modulePackages.set(key, value);
+  return value;
+}
+
+function packageForRoom(room: RoomState): ModulePackage {
+  return findPackage(room.settings.moduleId, room.settings.moduleVersion) ?? builtInModulePackages[0];
 }
 
 function moduleForRoom(room: RoomState): GameModule {
-  return findModule(room.settings.moduleId, room.settings.moduleVersion) ?? genericDuelModule;
+  return packageForRoom(room).module;
 }
 
 function moduleSupportsFormat(module: GameModule, format: MatchFormat): boolean {
@@ -207,6 +228,7 @@ function makeSnapshot(): PersistenceSnapshot {
       table: match.table,
       lastActionSequence: [...match.lastActionSequence.entries()],
     })),
+    modules: [...modulePackages.values()],
     sessions: [...sessions.values()].map(session => ({
       tokenHash: session.tokenHash,
       memberId: session.memberId,
@@ -244,6 +266,7 @@ function publicRoom(room: RoomState) {
     status: room.status,
     settingsLocked: room.settingsLocked,
     settings: room.settings,
+    modulePackage: packageForRoom(room),
     seats: room.seats.map(seat => ({
       seat: seat.seat,
       displayName: seat.displayName,
@@ -412,8 +435,10 @@ async function restoreState(): Promise<void> {
   const snapshot = await loadSnapshot();
   if (!snapshot) return;
 
+  for (const bundle of snapshot.modules ?? []) registerPackage(bundle);
+
   for (const savedRoom of snapshot.rooms) {
-    const restoredModule = findModule(savedRoom.settings.moduleId, savedRoom.settings.moduleVersion) ?? genericDuelModule;
+    const restoredModule = findPackage(savedRoom.settings.moduleId, savedRoom.settings.moduleVersion)?.module ?? genericDuelModule;
     const room: RoomState = {
       ...savedRoom,
       settings: {
@@ -505,14 +530,19 @@ io.on('connection', socket => {
     scheduleSave();
   });
 
-  socket.on('room:create', (payload: { displayName?: unknown; roomName?: unknown; format?: unknown; isPublic?: unknown; moduleId?: unknown } = {}) => {
+  socket.on('room:create', (payload: { displayName?: unknown; roomName?: unknown; format?: unknown; isPublic?: unknown; moduleId?: unknown; moduleVersion?: unknown; modulePackage?: unknown } = {}) => {
     if (currentSession(socket)) return fail(socket, 'Leave your current room first.');
     const displayName = safeName(payload.displayName);
     if (!displayName) return fail(socket, 'Choose a display name between 1 and 32 characters.');
 
     const memberId = randomUUID();
     const format = safeFormat(payload.format) ?? '1v1';
-    const selectedModule = findModule(payload.moduleId) ?? genericDuelModule;
+    const suppliedPackage = payload.modulePackage === undefined ? undefined : registerPackage(payload.modulePackage);
+    if (payload.modulePackage !== undefined && !suppliedPackage) return fail(socket, 'Invalid or unsupported module package.');
+    const requestedPackage = suppliedPackage ??
+      (payload.moduleId === undefined ? builtInModulePackages[0] : findPackage(payload.moduleId, payload.moduleVersion));
+    if (!requestedPackage) return fail(socket, 'That game module/version is not installed on the server.');
+    const selectedModule = requestedPackage.module;
     if (!moduleSupportsFormat(selectedModule, format)) return fail(socket, 'That game module does not support this match format.');
     const roomName = typeof payload.roomName === 'string' ? payload.roomName.trim().slice(0, 60) : '';
     const isPublic = payload.isPublic === true;
@@ -589,7 +619,7 @@ io.on('connection', socket => {
     scheduleSave();
   });
 
-  socket.on('room:settings', (payload: Partial<RoomSettings> = {}) => {
+  socket.on('room:settings', (payload: Partial<RoomSettings> & { modulePackage?: unknown } = {}) => {
     const session = currentSession(socket);
     const room = session ? rooms.get(session.roomCode) : undefined;
     if (!session || !room) return fail(socket, 'You are not in a room.');
@@ -597,10 +627,12 @@ io.on('connection', socket => {
     const safePatch: Partial<RoomSettings> = {};
     if (typeof payload.roomName === 'string') safePatch.roomName = payload.roomName.trim().slice(0, 60);
     const requestedFormat = safeFormat(payload.format) ?? room.settings.format;
-    const requestedModule = payload.moduleId !== undefined
-      ? findModule(payload.moduleId)
-      : moduleForRoom(room);
-    if (!requestedModule) return fail(socket, 'Unknown game module.');
+    const suppliedPackage = payload.modulePackage === undefined ? undefined : registerPackage(payload.modulePackage);
+    if (payload.modulePackage !== undefined && !suppliedPackage) return fail(socket, 'Invalid or unsupported module package.');
+    const requestedPackage = suppliedPackage ??
+      (payload.moduleId !== undefined ? findPackage(payload.moduleId, payload.moduleVersion) : packageForRoom(room));
+    if (!requestedPackage) return fail(socket, 'That game module/version is not installed on the server.');
+    const requestedModule = requestedPackage.module;
     if (!moduleSupportsFormat(requestedModule, requestedFormat)) return fail(socket, 'That game module does not support this match format.');
     if (safeFormat(payload.format)) safePatch.format = requestedFormat;
     if (payload.moduleId !== undefined) {
