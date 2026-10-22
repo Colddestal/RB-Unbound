@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { CardInspector } from './card-inspector';
+import { toCanonicalPoint, toViewerPoint, toViewerSeat } from './board-perspective';
 import { actionForCode, displayKey, type KeyBindings } from './controls';
 import {
   builtInModulePackages,
@@ -10,6 +11,7 @@ import {
   type ClientTableAction,
   type GameModule,
   type ModulePackage,
+  type ModuleZoneDefinition,
   type PlayerId,
   type PublicCard,
   type TableView,
@@ -151,6 +153,18 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   const activeModule = activePackage.module;
   const cardBack = activeModule.cardBacks[0];
   const zoneLabel = (kind: string) => activeModule.zones.find(zone => zone.kind === kind || zone.id === kind)?.label ?? kind;
+  const perspectiveViewer = room?.settings.format === '1v1' && !identity?.spectator ? identity?.seat : undefined;
+  const zoneAreaPosition = (zone: ModuleZoneDefinition, player?: PlayerId) => {
+    if (zone.ownerScoped && player) {
+      const visualSeat = toViewerSeat(player, perspectiveViewer, room?.settings.format ?? '1v1');
+      const seatKey = String(visualSeat) as '1' | '2' | '3' | '4';
+      return zone.seatPositions?.[seatKey] ??
+        (zone.defaultPosition ? toViewerPoint(zone.defaultPosition, perspectiveViewer, room?.settings.format ?? '1v1') : undefined);
+    }
+    return zone.defaultPosition
+      ? toViewerPoint(zone.defaultPosition, perspectiveViewer, room?.settings.format ?? '1v1')
+      : undefined;
+  };
   const compatibleCreatePackages = modulePackages.filter(bundle => bundle.module.supportedFormats.includes(format));
   const ownSeat = identity?.seat ? room?.seats.find(seat => seat.seat === identity.seat) : undefined;
   const isOwner = Boolean(ownSeat?.owner);
@@ -236,9 +250,10 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
 
   const renderFieldCard = (card: PublicCard) => {
     const owned = identity?.seat === card.owner;
+    const point = toViewerPoint({ x: card.x, y: card.y }, perspectiveViewer, room?.settings.format ?? '1v1');
     const style: CSSProperties = {
-      left: `${card.x / 10}%`,
-      top: `${card.y / 6}%`,
+      left: `${point.x / 10}%`,
+      top: `${point.y / 6}%`,
       transform: `rotate(${card.rotation}deg)`,
     };
 
@@ -268,11 +283,15 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
         if (!owned || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
         const rect = boardRef.current?.getBoundingClientRect();
         if (!rect) return;
+        const point = toCanonicalPoint({
+          x: ((event.clientX - rect.left - 43) / rect.width) * 1000,
+          y: ((event.clientY - rect.top - 58) / rect.height) * 600,
+        }, perspectiveViewer, room?.settings.format ?? '1v1');
         emitAction({
           type: 'move',
           id: card.id,
-          x: ((event.clientX - rect.left - 43) / rect.width) * 1000,
-          y: ((event.clientY - rect.top - 58) / rect.height) * 600,
+          x: point.x,
+          y: point.y,
         });
       }}
       onPointerUp={event => {
@@ -474,8 +493,9 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
             const ids = fieldCards
               .filter(card => card.owner === identity.seat)
               .filter(card => {
-                const cx = (card.x / 1000) * rect.width + 43;
-                const cy = (card.y / 600) * rect.height + 58;
+                const point = toViewerPoint({ x: card.x, y: card.y }, perspectiveViewer, room.settings.format);
+                const cx = (point.x / 1000) * rect.width + 43;
+                const cy = (point.y / 600) * rect.height + 58;
                 return cx >= left && cx <= right && cy >= top && cy <= bottom;
               })
               .map(card => card.id);
@@ -484,12 +504,33 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
             event.currentTarget.releasePointerCapture(event.pointerId);
           }}
         >
-          <div className="midline"><span>{zoneLabel('field').toUpperCase()}</span></div>
-          {activeModule.zones.filter(zone => zone.kind === 'custom' && zone.defaultPosition).map(zone => <div
-            className="module-zone-marker interactive"
-            key={zone.id}
-            style={{ left: `${zone.defaultPosition!.x / 10}%`, top: `${zone.defaultPosition!.y / 6}%` }}
-          ><strong>{zone.label}</strong><span>{match.table.cards.filter(card => card.zone === zone.id).length} cards</span></div>)}
+          {activeModule.zones.filter(zone => zone.kind !== 'hand' && zone.size).flatMap(zone => {
+            const players: Array<PlayerId | undefined> = zone.ownerScoped
+              ? room.seats.filter(seat => seat.occupied).map(seat => seat.seat as PlayerId)
+              : [undefined];
+            return players.flatMap(player => {
+              const position = zoneAreaPosition(zone, player);
+              if (!position || !zone.size) return [];
+              const count = player
+                ? (zone.kind === 'deck'
+                  ? hiddenByOwner.get(player)?.deckCount ?? 0
+                  : match.table.cards.filter(card => card.owner === player && card.zone === zone.id).length)
+                : match.table.cards.filter(card => card.zone === zone.id).length;
+              return [<div
+                className={`module-zone-area module-zone-${zone.kind}`}
+                key={`${zone.id}-${player ?? 'shared'}`}
+                style={{
+                  left: `${position.x / 10}%`,
+                  top: `${position.y / 6}%`,
+                  width: `${zone.size.width / 10}%`,
+                  height: `${zone.size.height / 6}%`,
+                }}
+              >
+                <strong>{zone.label}</strong>
+                {(zone.kind === 'deck' || zone.kind === 'discard' || zone.kind === 'custom') && <span>{count ? `${count} card${count === 1 ? '' : 's'}` : ''}</span>}
+              </div>];
+            });
+          })}
           {selectionBox && <div className="selection-box" style={{
             left: Math.min(selectionBox.startX, selectionBox.endX),
             top: Math.min(selectionBox.startY, selectionBox.endY),
@@ -498,8 +539,8 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           }} />}
           {fieldCards.map(renderFieldCard)}
           {activeModule.zones.filter(zone => zone.kind === 'custom').flatMap(zone => {
-            const position = zone.defaultPosition ?? { x: 500, y: 300 };
             return match.table.cards.filter(card => card.zone === zone.id).map((card, index) => {
+              const position = zoneAreaPosition(zone, card.owner) ?? { x: 500, y: 300 };
               const owned = identity?.seat === card.owner;
               return <button
                 key={card.id}
@@ -515,9 +556,16 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
               </button>;
             });
           })}
-          {discards.map((card, index) => <button key={card.id} className={`card discard-card ${card.faceUp ? '' : 'back'}`} style={{right:`${16 + card.owner * 18}px`, top:`${18 + index * 2}px`}} onMouseEnter={() => setHovered(card.id)} onMouseLeave={() => setHovered('')} onClick={() => { setSelected(card.id); setPinned(card.id); }}>
-            <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span><span>{card.label ?? 'Hidden card'}</span><small>P{card.owner} · discard</small>
-          </button>)}
+          {discards.map((card, index) => {
+            const discardZone = activeModule.zones.find(zone => zone.kind === 'discard');
+            const position = discardZone ? zoneAreaPosition(discardZone, card.owner) : undefined;
+            return <button key={card.id} className={`card discard-card ${card.faceUp ? '' : `back back-${cardBack.pattern}`}`} style={{
+              left: `calc(${(position?.x ?? 900) / 10}% + ${index * 2}px)`,
+              top: `calc(${(position?.y ?? 80) / 6}% + ${index * 2}px)`,
+            }} onMouseEnter={() => setHovered(card.id)} onMouseLeave={() => setHovered('')} onClick={() => { setSelected(card.id); setPinned(card.id); }}>
+            <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span><span>{card.label ?? 'Hidden card'}</span><small>P{card.owner} · {zoneLabel('discard')}</small>
+          </button>;
+          })}
         </div>
 
         {!identity?.spectator && <section className="hand-strip">
@@ -543,11 +591,15 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
                 event.clientX >= rect.left && event.clientX <= rect.right &&
                 event.clientY >= rect.top && event.clientY <= rect.bottom) {
                 emitAction({ type: 'to-zone', id: card.id, zone: 'field' });
+                const point = toCanonicalPoint({
+                  x: ((event.clientX - rect.left - 43) / rect.width) * 1000,
+                  y: ((event.clientY - rect.top - 58) / rect.height) * 600,
+                }, perspectiveViewer, room?.settings.format ?? '1v1');
                 emitAction({
                   type: 'move',
                   id: card.id,
-                  x: ((event.clientX - rect.left - 43) / rect.width) * 1000,
-                  y: ((event.clientY - rect.top - 58) / rect.height) * 600,
+                  x: point.x,
+                  y: point.y,
                 });
               }
               handDragRef.current = null;
