@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { CardInspector } from './card-inspector';
+import { DeckTools } from './deck-tools';
 import { actionForCode, displayKey, type KeyBindings } from './controls';
 import {
   applyAction,
   canManipulate,
+  builtInCardCatalog,
   builtInGameModules,
   genericDuelModule,
   initialTable,
   migrateTableState,
   type Card,
+  type DeckDefinition,
   type GameModule,
   type PlayerId,
   type TableState,
@@ -95,6 +98,41 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
       .sort((a, b) => a.order - b.order)
       .map(card => card.id);
     execute({ type: 'shuffle', player, orderedIds: shuffled(ids) });
+  };
+
+  const loadDeckForPlayerOne = (deck: DeckDefinition) => {
+    if (deck.moduleId !== activeModule.id || deck.moduleVersion !== activeModule.version) {
+      setError('That deck does not match the active module.');
+      return;
+    }
+    const catalog = new Map(builtInCardCatalog
+      .filter(card => card.moduleId === activeModule.id && card.moduleVersion === activeModule.version)
+      .map(card => [card.id, card]));
+    const cards = deck.cards.map((definitionId, index) => {
+      const definition = catalog.get(definitionId);
+      if (!definition) return null;
+      return {
+        id: `p1-${definitionId}-${index + 1}`,
+        definitionId,
+        label: definition.name,
+        owner: 1 as PlayerId,
+        zone: 'deck',
+        order: index,
+        x: 0,
+        y: 0,
+        rotation: 0,
+        faceUp: false,
+      };
+    }).filter((card): card is NonNullable<typeof card> => Boolean(card));
+
+    setTable(state => ({
+      ...state,
+      cards: [...state.cards.filter(card => card.owner !== 1), ...cards],
+    }));
+    setSelected('');
+    setMultiSelected([]);
+    setPinned('');
+    setError('');
   };
 
   const targets = selectedCards.length ? selectedCards : (selectedCard ? [selectedCard] : []);
@@ -406,6 +444,8 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
         {renderPlayer(1)}
       </div>
     </div>
+
+    <DeckTools module={activeModule} onLoadDeck={loadDeckForPlayerOne} />
 
     <footer>
       {activeModule.description} · Draw from your {zoneLabel('deck').toLowerCase()} · Double-click a {zoneLabel('hand').toLowerCase()} card to play it · Drag your {zoneLabel('field').toLowerCase()} cards.
