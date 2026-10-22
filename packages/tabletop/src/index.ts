@@ -86,10 +86,14 @@ export function createInitialTable(players: PlayerId[]): TableState {
   };
 }
 
-export function createInitialTableForModule(players: PlayerId[], module: GameModule): TableState {
+export function createInitialTableForModule(
+  players: PlayerId[],
+  module: GameModule,
+  cardCatalog = builtInCardCatalog,
+): TableState {
   const unique = [...new Set(players)].filter((player): player is PlayerId => player >= 1 && player <= 4);
-  const deck = starterDeckForModule(module);
-  const catalog = new Map(builtInCardCatalog
+  const deck = starterDeckForModule(module, cardCatalog);
+  const catalog = new Map(cardCatalog
     .filter(card => card.moduleId === module.id && card.moduleVersion === module.version)
     .map(card => [card.id, card]));
 
