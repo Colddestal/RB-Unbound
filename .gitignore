@@ -8,3 +8,6 @@ dist/
 .vscode/
 coverage/
 **/target/
+
+# Local multiplayer persistence
+.data/
