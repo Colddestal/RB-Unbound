@@ -364,7 +364,7 @@ export function Multiplayer({ bindings }: { bindings: KeyBindings }) {
 
     {room.status === 'active' && match && <div className="match-layout">
       <div className="left-stack">
-        <CardInspector card={inspectorCard} pinned={inspectorPinned} onClear={() => setPinned('')} />
+        <CardInspector card={inspectorCard} pinned={inspectorPinned} onClear={() => setPinned('')} module={activeModule} />
         <aside className="panel match-info">
         <h2>Match</h2>
         <p>{identity?.spectator ? 'Spectating' : `You are Seat ${identity?.seat}`}</p>
