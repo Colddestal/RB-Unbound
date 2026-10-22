@@ -4,9 +4,12 @@ import { actionForCode, displayKey, type KeyBindings } from './controls';
 import {
   applyAction,
   canManipulate,
+  builtInGameModules,
+  genericDuelModule,
   initialTable,
   isTableState,
   type Card,
+  type GameModule,
   type PlayerId,
   type TableState,
 } from '@rb-unbound/tabletop';
@@ -21,6 +24,10 @@ function shuffled<T>(items: T[]): T[] {
 }
 
 export function Table({ bindings }: { bindings: KeyBindings }) {
+  const [moduleId, setModuleId] = useState(genericDuelModule.id);
+  const activeModule = builtInGameModules.find(module => module.id === moduleId) ?? genericDuelModule;
+  const zoneLabel = (kind: Card['zone']) => activeModule.zones.find(zone => zone.kind === kind)?.label ?? kind;
+  const cardBack = activeModule.cardBacks[0];
   const [table, setTable] = useState<TableState>(() => structuredClone(initialTable));
   const [viewer, setViewer] = useState<PlayerId>(1);
   const [selected, setSelected] = useState<string>('');
@@ -168,7 +175,7 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
       key={card.id}
       aria-label={`${faceVisible ? card.label : 'Hidden card'}, Player ${card.owner}`}
       aria-pressed={selected === card.id}
-      className={`card ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${faceVisible ? '' : 'back'} ${owned ? '' : 'locked'}`}
+      className={`card ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${faceVisible ? '' : `back back-${cardBack.pattern}`} ${owned ? '' : 'locked'}`}
       style={style}
       onMouseEnter={() => setHovered(card.id)}
       onMouseLeave={() => setHovered('')}
@@ -205,7 +212,7 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
     >
       <span className="card-symbol">{faceVisible ? '✦' : '◆'}</span>
       <span>{faceVisible ? card.label : 'Hidden card'}</span>
-      <small>P{card.owner} · {card.zone}</small>
+      <small>P{card.owner} · {zoneLabel(card.zone)}</small>
     </button>;
   };
 
@@ -220,13 +227,13 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
     return <>
       <div className={`zone-label player-${player}`}>PLAYER {player} {active ? '· ACTIVE VIEW' : ''}</div>
       <div className={`deck-zone deck-${player}`}>
-        <div className="pile-card">◆<strong>DECK</strong><span>{deck.length} cards</span></div>
+        <div className={`pile-card back-${cardBack.pattern}`}>◆<strong>{zoneLabel('deck').toUpperCase()}</strong><span>{deck.length} cards</span></div>
         {active && <div className="pile-actions">
           <button disabled={!deck.length} onClick={() => execute({ type: 'draw', player })}>Draw</button>
           <button disabled={deck.length < 2} onClick={() => shuffleDeck(player)}>Shuffle</button>
         </div>}
       </div>
-      <div className={`discard-zone discard-${player}`}><span>DISCARD · {discard.length}</span></div>
+      <div className={`discard-zone discard-${player}`}><span>{zoneLabel('discard').toUpperCase()} · {discard.length}</span></div>
       {discard.slice(-6).map((card, index) => renderCard(card, index, discard, 'discard'))}
       {hand.map((card, index) => renderCard(card, index, hand, 'hand'))}
       {field.map((card, index) => renderCard(card, index, field, 'field'))}
@@ -241,20 +248,26 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
 
     <section className="viewer-bar">
       <strong>Local player view</strong>
+      <label className="module-picker">Module
+        <select value={moduleId} onChange={e => setModuleId(e.target.value)}>
+          {builtInGameModules.map((module: GameModule) => <option key={module.id} value={module.id}>{module.name}</option>)}
+        </select>
+      </label>
       <button className={viewer === 1 ? 'active' : ''} onClick={() => { setViewer(1); setSelected(''); }}>Player 1</button>
       <button className={viewer === 2 ? 'active' : ''} onClick={() => { setViewer(2); setSelected(''); }}>Player 2</button>
       <span className="chip">Opponent hand stays hidden</span>
       <span className="chip">PC controls enabled</span>
+      <span className="chip">{activeModule.name} · {cardBack.label}</span>
     </section>
 
     <section className="toolbar">
       <strong>{selectedCards.length ? `${selectedCards.length} cards selected` : selectedCard ? `Selected: ${selectedCard.owner === viewer ? selectedCard.label : 'Opponent card'}` : 'Select one of your cards'}</strong>
       <button disabled={!targets.length} onClick={rotateTargets}>Rotate</button>
       <button disabled={!targets.length} onClick={flipTargets}>Flip</button>
-      <button disabled={!targets.length} onClick={() => moveTargets('hand')}>To hand</button>
-      <button disabled={!targets.length} onClick={() => moveTargets('field')}>To field</button>
-      <button disabled={!targets.length} onClick={() => moveTargets('discard')}>Discard</button>
-      <button disabled={!targets.length} onClick={() => moveTargets('deck')}>To deck</button>
+      <button disabled={!targets.length} onClick={() => moveTargets('hand')}>To {zoneLabel('hand')}</button>
+      <button disabled={!targets.length} onClick={() => moveTargets('field')}>To {zoneLabel('field')}</button>
+      <button disabled={!targets.length} onClick={() => moveTargets('discard')}>{zoneLabel('discard')}</button>
+      <button disabled={!targets.length} onClick={() => moveTargets('deck')}>To {zoneLabel('deck')}</button>
       <select value={stackTarget} onChange={e => setStackTarget(e.target.value)} disabled={!selectedCard || selectedCard.zone !== 'field'}>
         <option value="">Stack target…</option>
         {ownFieldCards.map(card => <option key={card.id} value={card.id}>{card.label}</option>)}
@@ -329,7 +342,7 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
           if (event.currentTarget === event.target) setPinned('');
         }}
       >
-        <div className="midline"><span>SHARED FIELD</span></div>
+        <div className="midline"><span>{zoneLabel('field').toUpperCase()}</span></div>
         {selectionBox && <div className="selection-box" style={{
           left: Math.min(selectionBox.startX, selectionBox.endX),
           top: Math.min(selectionBox.startY, selectionBox.endY),
@@ -342,7 +355,7 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
     </div>
 
     <footer>
-      Draw from your deck · Double-click a hand card to play it · Drag your field cards · Opponent hand information and controls are hidden in the other player view.
+      {activeModule.description} · Draw from your {zoneLabel('deck').toLowerCase()} · Double-click a {zoneLabel('hand').toLowerCase()} card to play it · Drag your {zoneLabel('field').toLowerCase()} cards.
     </footer>
   </div>;
 }
