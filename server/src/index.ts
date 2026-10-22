@@ -34,6 +34,7 @@ import {
   type PlayerId,
   type TableAction,
   type TableState,
+  pileCapabilities,
   zoneBehavior,
 } from '@rb-unbound/tabletop';
 import { approximatePayloadBytes, RateLimiter, type LimitRule } from './rate-limit.js';
@@ -337,6 +338,11 @@ function moduleZonePolicy(room: RoomState) {
     stackableZones: module.zones.filter(zone => zone.stackable).map(zone => zone.id),
     publicZones: module.zones.filter(zone => zone.visibility === 'public').map(zone => zone.id),
     pileZones: module.zones.filter(zone => zoneBehavior(zone) === 'pile').map(zone => zone.id),
+    drawDestinations: new Map(module.zones.flatMap(zone => {
+      const capabilities = pileCapabilities(module, zone);
+      return capabilities.drawToZoneId ? [[zone.id, capabilities.drawToZoneId] as const] : [];
+    })),
+    shuffleZones: module.zones.filter(zone => pileCapabilities(module, zone).shuffle).map(zone => zone.id),
   };
 }
 
@@ -447,16 +453,18 @@ function toServerAction(
   table: TableState,
   seat: PlayerId,
   action: ClientTableAction,
-  pileZones: readonly string[],
+  drawDestinations: ReadonlyMap<string, string>,
+  shuffleZones: readonly string[],
 ): TableAction | null {
   if (action.type === 'draw') {
     const fromZone = action.fromZone ?? 'deck';
-    if (!pileZones.includes(fromZone)) return null;
-    return { type: 'draw', player: seat, fromZone, ...(action.toZone ? { toZone: action.toZone } : {}) };
+    const toZone = drawDestinations.get(fromZone);
+    if (!toZone) return null;
+    return { type: 'draw', player: seat, fromZone, toZone };
   }
   if (action.type === 'shuffle') {
     const zone = action.zone ?? 'deck';
-    if (!pileZones.includes(zone)) return null;
+    if (!shuffleZones.includes(zone)) return null;
     const ids = table.cards
       .filter(card => card.owner === seat && card.zone === zone)
       .sort((a, b) => a.order - b.order)
@@ -828,7 +836,7 @@ io.on('connection', socket => {
     }
 
     const policy = moduleZonePolicy(room);
-    const action = toServerAction(match.table, session.seat, payload.action, policy.pileZones);
+    const action = toServerAction(match.table, session.seat, payload.action, policy.drawDestinations, policy.shuffleZones);
     if (!action) return fail(socket, 'Unsupported match action.');
     const before = match.table;
     const updated = applyAction(before, action, policy.allowedZones, policy.stackableZones);
