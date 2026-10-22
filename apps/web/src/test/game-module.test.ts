@@ -43,6 +43,73 @@ describe('game module schema', () => {
     })).toBe(false);
   });
 
+  it('accepts explicit generic location/slot/subzone semantics', () => {
+    expect(isGameModule({
+      ...genericDuelModule,
+      zones: [
+        ...genericDuelModule.zones,
+        {
+          id: 'leader',
+          label: 'Leader',
+          kind: 'custom',
+          visibility: 'public',
+          ownerScoped: true,
+          behavior: 'slot',
+          role: 'leader',
+          capacity: 1,
+        },
+        {
+          id: 'objective',
+          label: 'Objective',
+          kind: 'custom',
+          visibility: 'public',
+          ownerScoped: false,
+          behavior: 'location',
+          role: 'objective',
+        },
+        {
+          id: 'objective-hidden',
+          label: 'Facedown',
+          kind: 'custom',
+          visibility: 'owner',
+          ownerScoped: false,
+          behavior: 'subzone',
+          role: 'facedown',
+          parentZoneId: 'objective',
+          capacity: 1,
+        },
+      ],
+    })).toBe(true);
+  });
+
+  it('rejects invalid nested zone parents and slot capacities', () => {
+    expect(isGameModule({
+      ...genericDuelModule,
+      zones: [{
+        id: 'bad-slot',
+        label: 'Bad Slot',
+        kind: 'custom',
+        visibility: 'public',
+        ownerScoped: true,
+        behavior: 'slot',
+        capacity: 2,
+      }],
+    })).toBe(false);
+
+    expect(isGameModule({
+      ...genericDuelModule,
+      zones: [{
+        id: 'orphan',
+        label: 'Orphan',
+        kind: 'custom',
+        visibility: 'owner',
+        ownerScoped: true,
+        behavior: 'subzone',
+        parentZoneId: 'missing-parent',
+      }],
+    })).toBe(false);
+  });
+
   it('rejects duplicate card field ids', () => {
     expect(isGameModule({
       ...genericDuelModule,
