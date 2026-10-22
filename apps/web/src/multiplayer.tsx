@@ -9,8 +9,9 @@ import { toCanonicalPoint, toViewerPoint, toViewerSeat } from './board-perspecti
 import { actionForCode, displayKey, type KeyBindings } from './controls';
 import {
   builtInModulePackages,
-  genericDuelModule,
+  frontierSkirmishModule,
   isModulePackage,
+  zoneBehavior,
   modulePackageKey,
   type ClientTableAction,
   type GameModule,
@@ -84,7 +85,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   const [displayName, setDisplayName] = useState('Player');
   const [roomName, setRoomName] = useState('Project Poor Table');
   const [format, setFormat] = useState<MatchFormat>('1v1');
-  const [createModuleKey, setCreateModuleKey] = useState(modulePackageKey(genericDuelModule));
+  const [createModuleKey, setCreateModuleKey] = useState(modulePackageKey(frontierSkirmishModule));
   const [createPublic, setCreatePublic] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [joinInviteCode, setJoinInviteCode] = useState('');
@@ -249,8 +250,8 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
     emitAction({ type: 'unstack', id: contextCard.id });
   };
 
-  const drawCards = (count: number) => {
-    for (let index = 0; index < count; index += 1) emitAction({ type: 'draw' });
+  const drawCards = (count: number, fromZone = 'deck') => {
+    for (let index = 0; index < count; index += 1) emitAction({ type: 'draw', fromZone });
   };
 
   useEffect(() => {
@@ -602,31 +603,34 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
             event.currentTarget.releasePointerCapture(event.pointerId);
           }}
         >
-          {activeModule.zones.filter(zone => zone.kind === 'deck' && zone.size).flatMap(zone => {
-            return room.seats.filter(seat => seat.occupied).flatMap(seat => {
-              const player = seat.seat as PlayerId;
-              const position = zoneAreaPosition(zone, player);
-              if (!position) return [];
-              const count = hiddenByOwner.get(player)?.deckCount ?? 0;
-              const interactive = !identity?.spectator && identity?.seat === player;
-              return [<DeckPile
-                key={`deck-pile-${player}`}
-                label={zone.label}
-                count={count}
-                pattern={cardBack.pattern}
-                interactive={interactive}
-                style={{
-                  left: `${position.x / 10}%`,
-                  top: `${position.y / 6}%`,
-                  width: `${zone.size!.width / 10}%`,
-                  height: `${zone.size!.height / 6}%`,
-                  transform: 'translate(-50%,-50%)',
-                }}
-                onDraw={amount => drawCards(amount)}
-                onShuffle={() => emitAction({ type: 'shuffle' })}
-              />];
-            });
-          })}
+          {activeModule.zones
+            .filter(zone => zone.size && zoneBehavior(zone) === 'pile' && Boolean(zone.pile?.drawToZoneId))
+            .flatMap(zone => {
+              return room.seats.filter(seat => seat.occupied).flatMap(seat => {
+                const player = seat.seat as PlayerId;
+                const position = zoneAreaPosition(zone, player);
+                if (!position || !zone.size) return [];
+                const summary = hiddenByOwner.get(player);
+                const count = summary?.zoneCounts?.[zone.id] ?? (zone.id === 'deck' ? summary?.deckCount ?? 0 : 0);
+                const interactive = !identity?.spectator && identity?.seat === player;
+                return [<DeckPile
+                  key={`${zone.id}-pile-${player}`}
+                  label={zone.label}
+                  count={count}
+                  pattern={cardBack.pattern}
+                  interactive={interactive}
+                  style={{
+                    left: `${position.x / 10}%`,
+                    top: `${position.y / 6}%`,
+                    width: `${zone.size.width / 10}%`,
+                    height: `${zone.size.height / 6}%`,
+                    transform: 'translate(-50%,-50%)',
+                  }}
+                  onDraw={amount => drawCards(amount, zone.id)}
+                  onShuffle={() => emitAction({ type: 'shuffle', zone: zone.id })}
+                />];
+              });
+            })}
           {activeModule.zones.filter(zone => zone.kind !== 'hand' && zone.size).flatMap(zone => {
             const players: Array<PlayerId | undefined> = zone.ownerScoped
               ? room.seats.filter(seat => seat.occupied).map(seat => seat.seat as PlayerId)
@@ -635,8 +639,8 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
               const position = zoneAreaPosition(zone, player);
               if (!position || !zone.size) return [];
               const count = player
-                ? (zone.kind === 'deck'
-                  ? hiddenByOwner.get(player)?.deckCount ?? 0
+                ? (zoneBehavior(zone) === 'pile'
+                  ? hiddenByOwner.get(player)?.zoneCounts?.[zone.id] ?? (zone.id === 'deck' ? hiddenByOwner.get(player)?.deckCount ?? 0 : 0)
                   : match.table.cards.filter(card => card.owner === player && card.zone === zone.id).length)
                 : match.table.cards.filter(card => card.zone === zone.id).length;
               return [<div
@@ -661,7 +665,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
             height: Math.abs(selectionBox.endY - selectionBox.startY),
           }} />}
           {fieldCards.map(renderFieldCard)}
-          {activeModule.zones.filter(zone => zone.kind === 'custom').flatMap(zone => {
+          {activeModule.zones.filter(zone => zone.kind === 'custom' && zoneBehavior(zone) !== 'pile').flatMap(zone => {
             return match.table.cards.filter(card => card.zone === zone.id).flatMap((card, index) => {
               const rawPositions = !zone.ownerScoped && zone.displayCopies?.length
                 ? zone.displayCopies
