@@ -40,7 +40,7 @@ export type ClientTableAction =
   | { type: 'move'; id: string; x: number; y: number }
   | { type: 'rotate'; id: string }
   | { type: 'flip'; id: string }
-  | { type: 'draw'; fromZone?: CardZone; toZone?: CardZone }
+  | { type: 'draw'; fromZone?: CardZone }
   | { type: 'to-zone'; id: string; zone: CardZone }
   | { type: 'shuffle'; zone?: CardZone }
   | { type: 'stack'; id: string; targetId: string }
@@ -261,9 +261,7 @@ export function isClientTableAction(value: unknown): value is ClientTableAction 
   const action = value as Record<string, unknown>;
   if (action.type === 'draw') {
     const fromZone = action.fromZone;
-    const toZone = action.toZone;
-    return (fromZone === undefined || (typeof fromZone === 'string' && ZONE_ID_PATTERN.test(fromZone))) &&
-      (toZone === undefined || (typeof toZone === 'string' && ZONE_ID_PATTERN.test(toZone)));
+    return fromZone === undefined || (typeof fromZone === 'string' && ZONE_ID_PATTERN.test(fromZone));
   }
   if (action.type === 'shuffle') {
     return action.zone === undefined || (typeof action.zone === 'string' && ZONE_ID_PATTERN.test(action.zone));
