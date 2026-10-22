@@ -279,10 +279,15 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
     if (mode === 'hand') {
       const spread = Math.min(58, Math.max(27, 650 / Math.max(collection.length, 1)));
       const width = Math.min(680, collection.length * spread + 55);
-      const start = 50 - width / 2 / 10;
-      style.left = `calc(${start}% + ${index * spread}px)`;
-      const visualSeat = toViewerSeat(card.owner, viewer, '1v1');
-      style.top = visualSeat === 2 ? '4px' : 'calc(100% - 108px)';
+      const visualSeat = toViewerSeat(card.owner, viewer, '1v1') as 1 | 2;
+      const handZone = activeModule.zones.find(zone => zone.kind === 'hand');
+      const seatKey = visualSeat === 1 ? '1' : '2';
+      const handCenter = handZone?.seatPositions?.[seatKey] ?? {
+        x: 500,
+        y: visualSeat === 2 ? 30 : 570,
+      };
+      style.left = `calc(${handCenter.x / 10}% - ${width / 2}px + ${index * spread}px)`;
+      style.top = `calc(${handCenter.y / 6}% - 54px)`;
       style.transform = 'rotate(0deg)';
       style.zIndex = 20 + index;
     }
@@ -567,7 +572,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
           if (event.currentTarget === event.target) setPinned('');
         }}
       >
-        {activeModule.zones.filter(zone => zone.kind !== 'hand' && zone.size).flatMap(zone => {
+        {activeModule.zones.filter(zone => zone.size).flatMap(zone => {
           const players: Array<1 | 2 | undefined> = zone.ownerScoped ? [1, 2] : [undefined];
           return players.flatMap(player => {
             const position = zoneAreaPosition(zone, player);
@@ -577,7 +582,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
               : table.cards.filter(card => card.zone === zone.id).length;
             return [<div
               key={`${zone.id}-${player ?? 'shared'}`}
-              className={`module-zone-area module-zone-${zone.kind}`}
+              className={`module-zone-area module-zone-${zone.kind} module-zone-behavior-${zone.behavior ?? 'legacy'} module-zone-role-${zone.role ?? 'none'}`}
               style={{
                 left: `${position.x / 10}%`,
                 top: `${position.y / 6}%`,
