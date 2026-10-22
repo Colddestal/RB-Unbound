@@ -266,6 +266,19 @@ function seatFor(room: RoomState, memberId: string): PlayerId | undefined {
   return seat === 1 || seat === 2 || seat === 3 || seat === 4 ? seat : undefined;
 }
 
+function visibleHandsForSeat(room: RoomState, seatNumber: PlayerId): PlayerId[] {
+  const visible: PlayerId[] = [seatNumber];
+  if (room.settings.format !== '2v2' || !room.settings.shareTeamHands) return visible;
+  const seat = room.seats.find(item => item.seat === seatNumber);
+  if (!seat) return visible;
+  for (const teammate of room.seats) {
+    if (teammate.memberId && teammate.team === seat.team && teammate.seat !== seatNumber) {
+      visible.push(teammate.seat as PlayerId);
+    }
+  }
+  return visible;
+}
+
 function emitMatchViews(room: RoomState): void {
   const match = matches.get(room.code);
   if (!match) return;
@@ -276,7 +289,7 @@ function emitMatchViews(room: RoomState): void {
       seat: seat.seat,
       spectator: false,
       revision: match.revision,
-      table: projectTable(match.table, seat.seat),
+      table: projectTable(match.table, seat.seat as PlayerId, visibleHandsForSeat(room, seat.seat as PlayerId)),
     });
   }
 
@@ -541,6 +554,7 @@ io.on('connection', socket => {
     if (typeof payload.isPublic === 'boolean') safePatch.isPublic = payload.isPublic;
     if (typeof payload.allowSpectators === 'boolean') safePatch.allowSpectators = payload.allowSpectators;
     if (typeof payload.readyCheck === 'boolean') safePatch.readyCheck = payload.readyCheck;
+    if (typeof payload.shareTeamHands === 'boolean') safePatch.shareTeamHands = payload.shareTeamHands;
     if (payload.turnTimerSeconds === null || (
       typeof payload.turnTimerSeconds === 'number' &&
       Number.isInteger(payload.turnTimerSeconds) &&
