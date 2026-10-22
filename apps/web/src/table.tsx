@@ -355,6 +355,12 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
           y: point.y,
         });
       }}
+      onPointerCancel={event => {
+        handDragRef.current = null;
+        setDragPreview(null);
+        setFieldDragId('');
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+      }}
       onPointerUp={event => {
         if (!owned || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
         const rect = boardRef.current?.getBoundingClientRect();
