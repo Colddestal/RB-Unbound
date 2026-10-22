@@ -29,9 +29,29 @@ describe('built-in module rendering data', () => {
     const frontierDeck = frontierSkirmishModule.zones.find(zone => zone.kind === 'deck');
 
     expect(genericDeck?.seatPositions?.['1']).toEqual({ x: 70, y: 470 });
-    expect(frontierDeck?.seatPositions?.['1']).toEqual({ x: 900, y: 425 });
+    expect(frontierDeck?.seatPositions?.['1']).toEqual({ x: 75, y: 485 });
     expect(frontierDeck?.size).toEqual({ width: 70, height: 88 });
     expect(genericDeck?.seatPositions?.['1']).not.toEqual(frontierDeck?.seatPositions?.['1']);
+  });
+
+  it('keeps player piles grouped on the left rail and leader slots on the right rail', () => {
+    const mainDeck = frontierSkirmishModule.zones.find(zone => zone.id === 'deck');
+    const resourceDeck = frontierSkirmishModule.zones.find(zone => zone.id === 'resource-deck');
+    const trash = frontierSkirmishModule.zones.find(zone => zone.id === 'discard');
+    const champion = frontierSkirmishModule.zones.find(zone => zone.id === 'vanguard');
+    const leader = frontierSkirmishModule.zones.find(zone => zone.id === 'commander');
+
+    for (const seat of ['1', '2'] as const) {
+      expect(mainDeck?.seatPositions?.[seat]?.x).toBe(75);
+      expect(resourceDeck?.seatPositions?.[seat]?.x).toBe(75);
+      expect(trash?.seatPositions?.[seat]?.x).toBe(75);
+      expect(champion?.seatPositions?.[seat]?.x).toBe(925);
+      expect(leader?.seatPositions?.[seat]?.x).toBe(925);
+    }
+
+    expect(resourceDeck?.seatPositions?.['1']?.y).toBeLessThan(mainDeck?.seatPositions?.['1']?.y ?? 0);
+    expect(mainDeck?.seatPositions?.['1']?.y).toBeLessThan(trash?.seatPositions?.['1']?.y ?? 0);
+    expect(champion?.seatPositions?.['1']?.y).toBeLessThan(leader?.seatPositions?.['1']?.y ?? 0);
   });
 
   it('supports sized owner-scoped mat areas', () => {
