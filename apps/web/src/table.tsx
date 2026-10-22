@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { CardInspector } from './card-inspector';
 import { DeckTools } from './deck-tools';
+import { toCanonicalPoint, toViewerPoint, toViewerSeat } from './board-perspective';
 import { actionForCode, displayKey, type KeyBindings } from './controls';
 import {
   applyAction,
@@ -16,6 +17,7 @@ import {
   type DeckDefinition,
   type GameModule,
   type ModulePackage,
+  type ModuleZoneDefinition,
   type PlayerId,
   type TableState,
 } from '@rb-unbound/tabletop';
@@ -38,11 +40,22 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
   const cardBack = activeModule.cardBacks[0];
   const zonePosition = (kind: Card['zone'], player: 1 | 2) => {
     const zone = zoneFor(kind);
+    const visualSeat = toViewerSeat(player, viewer, '1v1') as 1 | 2;
     const fallback = kind === 'deck'
-      ? (player === 1 ? { x: 70, y: 470 } : { x: 850, y: 40 })
-      : (player === 1 ? { x: 850, y: 470 } : { x: 90, y: 45 });
-    const seatKey = player === 1 ? '1' : '2';
-    return zone?.seatPositions?.[seatKey] ?? zone?.defaultPosition ?? fallback;
+      ? (visualSeat === 1 ? { x: 70, y: 470 } : { x: 850, y: 40 })
+      : (visualSeat === 1 ? { x: 850, y: 470 } : { x: 90, y: 45 });
+    const seatKey = visualSeat === 1 ? '1' : '2';
+    if (zone?.seatPositions?.[seatKey]) return zone.seatPositions[seatKey]!;
+    if (zone?.defaultPosition) return toViewerPoint(zone.defaultPosition, viewer, '1v1');
+    return fallback;
+  };
+  const zoneAreaPosition = (zone: ModuleZoneDefinition, player?: 1 | 2) => {
+    if (zone.ownerScoped && player) {
+      const visualSeat = toViewerSeat(player, viewer, '1v1') as 1 | 2;
+      const seatKey = visualSeat === 1 ? '1' : '2';
+      return zone.seatPositions?.[seatKey] ?? (zone.defaultPosition ? toViewerPoint(zone.defaultPosition, viewer, '1v1') : undefined);
+    }
+    return zone.defaultPosition ? toViewerPoint(zone.defaultPosition, viewer, '1v1') : undefined;
   };
   const [table, setTable] = useState<TableState>(() => structuredClone(initialTable));
   const [viewer, setViewer] = useState<PlayerId>(1);
@@ -214,8 +227,9 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
 
     if (mode === 'field') {
       const target = card.stackOn ? table.cards.find(item => item.id === card.stackOn) : undefined;
-      style.left = `${((target?.x ?? card.x) / 10)}%`;
-      style.top = `${((target?.y ?? card.y) / 6)}%`;
+      const point = toViewerPoint({ x: target?.x ?? card.x, y: target?.y ?? card.y }, viewer, '1v1');
+      style.left = `${point.x / 10}%`;
+      style.top = `${point.y / 6}%`;
       style.transform = `translate(${target ? 9 : 0}px, ${target ? 9 : 0}px) rotate(${card.rotation}deg)`;
       style.zIndex = target ? 4 : 3;
     }
@@ -225,7 +239,8 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       const width = Math.min(680, collection.length * spread + 55);
       const start = 50 - width / 2 / 10;
       style.left = `calc(${start}% + ${index * spread}px)`;
-      style.top = card.owner === 2 ? '4px' : 'calc(100% - 108px)';
+      const visualSeat = toViewerSeat(card.owner, viewer, '1v1');
+      style.top = visualSeat === 2 ? '4px' : 'calc(100% - 108px)';
       style.transform = 'rotate(0deg)';
       style.zIndex = 20 + index;
     }
@@ -271,12 +286,16 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
         if (!owned || mode !== 'field' || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
         const rect = boardRef.current?.getBoundingClientRect();
         if (!rect) return;
+        const point = toCanonicalPoint({
+          x: ((event.clientX - rect.left - 43) / rect.width) * 1000,
+          y: ((event.clientY - rect.top - 58) / rect.height) * 600,
+        }, viewer, '1v1');
         execute({
           type: 'move',
           id: card.id,
           actor: viewer,
-          x: ((event.clientX - rect.left - 43) / rect.width) * 1000,
-          y: ((event.clientY - rect.top - 58) / rect.height) * 600,
+          x: point.x,
+          y: point.y,
         });
       }}
       onPointerUp={event => {
@@ -289,12 +308,16 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
             event.clientX >= rect.left && event.clientX <= rect.right &&
             event.clientY >= rect.top && event.clientY <= rect.bottom) {
             execute({ type: 'to-zone', id: card.id, zone: 'field', actor: viewer });
+            const point = toCanonicalPoint({
+              x: ((event.clientX - rect.left - 43) / rect.width) * 1000,
+              y: ((event.clientY - rect.top - 58) / rect.height) * 600,
+            }, viewer, '1v1');
             execute({
               type: 'move',
               id: card.id,
               actor: viewer,
-              x: ((event.clientX - rect.left - 43) / rect.width) * 1000,
-              y: ((event.clientY - rect.top - 58) / rect.height) * 600,
+              x: point.x,
+              y: point.y,
             });
           }
         }
@@ -338,7 +361,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       {activeModule.zones.filter(zone => zone.kind === 'custom').flatMap(zone => {
         const cards = table.cards.filter(card => card.owner === player && card.zone === zone.id);
         return cards.map((card, index) => {
-          const position = zone.defaultPosition ?? { x: 500, y: 300 };
+          const position = zoneAreaPosition(zone, player) ?? { x: 500, y: 300 };
           const styleOffset = index * 10;
           return <button
             key={card.id}
@@ -452,8 +475,9 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
           const ids = table.cards
             .filter(card => card.owner === viewer && card.zone === 'field')
             .filter(card => {
-              const cx = (card.x / 1000) * rect.width + 43;
-              const cy = (card.y / 600) * rect.height + 58;
+              const point = toViewerPoint({ x: card.x, y: card.y }, viewer, '1v1');
+              const cx = (point.x / 1000) * rect.width + 43;
+              const cy = (point.y / 600) * rect.height + 58;
               return cx >= left && cx <= right && cy >= top && cy <= bottom;
             })
             .map(card => card.id);
@@ -465,17 +489,28 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
           if (event.currentTarget === event.target) setPinned('');
         }}
       >
-        <div className="midline"><span>{zoneLabel('field').toUpperCase()}</span></div>
-        {activeModule.zones.filter(zone => zone.defaultPosition && zone.kind === 'custom').map(zone => {
-          const cards = table.cards.filter(card => card.zone === zone.id);
-          return <div
-            key={zone.id}
-            className="module-zone-marker interactive"
-            style={{ left: `${zone.defaultPosition!.x / 10}%`, top: `${zone.defaultPosition!.y / 6}%` }}
-          >
-            <strong>{zone.label}</strong>
-            <span>{cards.length} card{cards.length === 1 ? '' : 's'}</span>
-          </div>;
+        {activeModule.zones.filter(zone => zone.kind !== 'hand' && zone.size).flatMap(zone => {
+          const players: Array<1 | 2 | undefined> = zone.ownerScoped ? [1, 2] : [undefined];
+          return players.flatMap(player => {
+            const position = zoneAreaPosition(zone, player);
+            if (!position || !zone.size) return [];
+            const count = player
+              ? table.cards.filter(card => card.owner === player && card.zone === zone.id).length
+              : table.cards.filter(card => card.zone === zone.id).length;
+            return [<div
+              key={`${zone.id}-${player ?? 'shared'}`}
+              className={`module-zone-area module-zone-${zone.kind}`}
+              style={{
+                left: `${position.x / 10}%`,
+                top: `${position.y / 6}%`,
+                width: `${zone.size.width / 10}%`,
+                height: `${zone.size.height / 6}%`,
+              }}
+            >
+              <strong>{zone.label}</strong>
+              {zone.kind === 'custom' && <span>{count ? `${count} card${count === 1 ? '' : 's'}` : ''}</span>}
+            </div>];
+          });
         })}
         {selectionBox && <div className="selection-box" style={{
           left: Math.min(selectionBox.startX, selectionBox.endX),
