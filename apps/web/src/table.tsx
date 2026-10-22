@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { CardInspector } from './card-inspector';
 import { DeckTools } from './deck-tools';
+import { DeckPile } from './deck-pile';
 import { toCanonicalPoint, toViewerPoint, toViewerSeat } from './board-perspective';
 import { actionForCode, displayKey, type KeyBindings } from './controls';
 import {
@@ -120,6 +121,10 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
     } catch {
       setError('Could not load this table file. Current saves and legacy v3/v4 table files are supported.');
     }
+  };
+
+  const drawCards = (player: PlayerId, count: number) => {
+    for (let index = 0; index < count; index += 1) execute({ type: 'draw', player });
   };
 
   const shuffleDeck = (player: PlayerId) => {
@@ -341,16 +346,18 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
 
     return <>
       <div className={`zone-label player-${player}`}>PLAYER {player} {active ? '· ACTIVE VIEW' : ''}</div>
-      <div className="deck-zone" style={{
-        left: `${zonePosition('deck', player).x / 10}%`,
-        top: `${zonePosition('deck', player).y / 6}%`,
-      }}>
-        <div className={`pile-card back-${cardBack.pattern}`}>◆<strong>{zoneLabel('deck').toUpperCase()}</strong><span>{deck.length} cards</span></div>
-        {active && <div className="pile-actions">
-          <button disabled={!deck.length} onClick={() => execute({ type: 'draw', player })}>Draw</button>
-          <button disabled={deck.length < 2} onClick={() => shuffleDeck(player)}>Shuffle</button>
-        </div>}
-      </div>
+      <DeckPile
+        label={zoneLabel('deck')}
+        count={deck.length}
+        pattern={cardBack.pattern}
+        interactive={active}
+        style={{
+          left: `${zonePosition('deck', player).x / 10}%`,
+          top: `${zonePosition('deck', player).y / 6}%`,
+        }}
+        onDraw={count => drawCards(player, count)}
+        onShuffle={() => shuffleDeck(player)}
+      />
       <div className="discard-zone" style={{
         left: `${zonePosition('discard', player).x / 10}%`,
         top: `${zonePosition('discard', player).y / 6}%`,
