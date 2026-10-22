@@ -82,7 +82,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   const [dragPreview, setDragPreview] = useState<{ id: string; label: string; x: number; y: number } | null>(null);
   const [fieldDragId, setFieldDragId] = useState('');
   const boardRef = useRef<HTMLDivElement>(null);
-  const handStripRef = useRef<HTMLElement>(null);
+  const handStripRef = useRef<HTMLElement | null>(null);
   const handDragRef = useRef<{ id: string; startX: number; startY: number } | null>(null);
   const actionSequenceRef = useRef(0);
 
@@ -304,6 +304,10 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           x: point.x,
           y: point.y,
         });
+      }}
+      onPointerCancel={event => {
+        setFieldDragId('');
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
       }}
       onPointerUp={event => {
         if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
@@ -637,6 +641,11 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
               if (event.currentTarget.hasPointerCapture(event.pointerId) && handDragRef.current?.id === card.id) {
                 setDragPreview({ id: card.id, label: card.label ?? 'Card', x: event.clientX, y: event.clientY });
               }
+            }}
+            onPointerCancel={event => {
+              handDragRef.current = null;
+              setDragPreview(null);
+              if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
             }}
             onPointerUp={event => {
               if (!event.currentTarget.hasPointerCapture(event.pointerId) || handDragRef.current?.id !== card.id) return;
