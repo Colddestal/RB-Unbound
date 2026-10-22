@@ -271,6 +271,33 @@ export function isTableState(value: unknown): value is TableState {
   return v.version === 4 && Array.isArray(v.cards) && v.cards.length <= 500 && v.cards.every(validCardShape);
 }
 
+
+
+export type TableSaveFile = {
+  fileSchemaVersion: 1;
+  moduleId: string;
+  moduleVersion: string;
+  table: TableState;
+};
+
+export function createTableSaveFile(state: TableState, module: Pick<GameModule, 'id' | 'version'>): TableSaveFile {
+  return {
+    fileSchemaVersion: 1,
+    moduleId: module.id,
+    moduleVersion: module.version,
+    table: state,
+  };
+}
+
+export function isTableSaveFile(value: unknown): value is TableSaveFile {
+  if (!value || typeof value !== 'object') return false;
+  const file = value as Partial<TableSaveFile>;
+  return file.fileSchemaVersion === 1 &&
+    typeof file.moduleId === 'string' && ZONE_ID_PATTERN.test(file.moduleId) &&
+    typeof file.moduleVersion === 'string' && file.moduleVersion.length >= 1 && file.moduleVersion.length <= 40 &&
+    isTableState(file.table);
+}
+
 export function migrateTableState(value: unknown): TableState | null {
   if (isTableState(value)) return value;
   if (!value || typeof value !== 'object') return null;
