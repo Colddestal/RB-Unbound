@@ -18,13 +18,13 @@ export function DeckTools({
   onLoadDeck: (deck: DeckDefinition) => void;
 }) {
   const [query, setQuery] = useState('');
-  const [deck, setDeck] = useState<DeckDefinition>(() => starterDeckForModule(module));
+  const [deck, setDeck] = useState<DeckDefinition>(() => starterDeckForModule(module, catalog));
   const [message, setMessage] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
 
   const moduleDeck = deck.moduleId === module.id && deck.moduleVersion === module.version
     ? deck
-    : starterDeckForModule(module);
+    : starterDeckForModule(module, catalog);
   const results = useMemo(() => searchCardCatalog(catalog, module, query), [catalog, module, query]);
 
   const download = () => {
@@ -74,7 +74,7 @@ export function DeckTools({
 
     <div className="button-row">
       <button onClick={() => {
-        const starter = starterDeckForModule(module);
+        const starter = starterDeckForModule(module, catalog);
         setDeck(starter);
         setMessage('Reset to the built-in starter deck.');
       }}>Starter deck</button>
