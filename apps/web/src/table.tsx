@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   applyAction,
   canManipulate,
@@ -78,7 +78,7 @@ export function Table() {
     const owned = canManipulate(card, viewer);
     const hidden = card.zone === 'hand' && card.owner !== viewer;
     const faceVisible = !hidden && card.faceUp;
-    const style: React.CSSProperties = {};
+    const style: CSSProperties = {};
 
     if (mode === 'field') {
       const target = card.stackOn ? table.cards.find(item => item.id === card.stackOn) : undefined;
