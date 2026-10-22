@@ -242,3 +242,48 @@ Multiplayer history is server-authoritative and persisted with the room snapshot
 History follows the same hidden-information boundary as the tabletop. Card names are only written to shared history when the card is face-up in a module zone marked public. Draws and other private actions use generic wording such as "drew a card" rather than revealing card identity.
 
 The local sandbox keeps a client-side activity log for manual testing of the same dock experience.
+
+
+## Generic locations, slots, piles and match series
+
+The module schema can now describe tabletop structure without hard-coding a particular game's terminology.
+
+Zones may optionally declare a generic behavior:
+
+- `pile` — an ordered pile of cards
+- `hand` — a private hand-like collection
+- `slot` — a fixed-capacity placement slot; slot capacity is 1
+- `area` — a free placement area
+- `location` — a rules-significant place that cards can occupy
+- `subzone` — a nested child of another zone
+
+A module may also attach its own stable semantic `role` string. Roles are deliberately opaque to the core engine, so an authorized game module can use names such as a leader slot, objective, resource pile, or battlefield without adding those concepts to shared engine code.
+
+Zones support optional parent-child nesting and capacity hints. A subzone must reference another declared zone, and cyclic or missing parent relationships are rejected by validation. This is intended to support structures such as a private facedown sub-zone associated with a public location.
+
+### Declarative pile capabilities
+
+Being a pile does not automatically grant deck actions. A module can explicitly declare:
+
+- the zone that a draw from that pile moves a card into
+- whether that pile may be shuffled through the normal player pile action
+
+The multiplayer server derives these capabilities from the authoritative module package. Clients may request which pile to draw from or shuffle, but they cannot choose an arbitrary draw destination. Existing schema-v1 `deck` zones retain their historical deck-to-hand/shuffle behavior for backward compatibility.
+
+The tabletop reducer also supports internal/manual actions that draw from one declared zone into another. This provides the generic primitive needed for modules with more than one ordered draw pile while preserving the existing single-deck experience.
+
+### Bo1 / Bo3 series state
+
+Rooms now have a generic `bestOf` setting of 1 or 3. Starting a room initializes a durable series record containing:
+
+- current game number
+- wins required
+- wins by team
+- per-game status
+- optional first-player seat
+- opaque per-seat setup selections
+- per-game winner
+
+Setup-selection IDs are deliberately module-defined. The core does not know whether a selection represents a battlefield, map, objective, scenario, or another game-specific choice. Completed game records remain in the series so a rules module can later evaluate used/remaining selections across a multi-game match.
+
+The generic series helpers support setup -> active -> complete transitions and advance a best-of-three match until one team reaches two game wins. The development server exposes and persists this series data through normal room snapshots. Older persisted rooms restore as Bo1.
