@@ -8,6 +8,7 @@ const ZONE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 export type Card = {
   id: string;
   label: string;
+  definitionId?: string;
   owner: PlayerId;
   zone: CardZone;
   order: number;
@@ -42,9 +43,10 @@ export type ClientTableAction =
   | { type: 'stack'; id: string; targetId: string }
   | { type: 'unstack'; id: string };
 
-export type PublicCard = Omit<Card, 'label' | 'id'> & {
+export type PublicCard = Omit<Card, 'label' | 'id' | 'definitionId'> & {
   id: string;
   label: string | null;
+  definitionId: string | null;
 };
 
 export type TableView = {
@@ -202,6 +204,7 @@ export function projectTable(
       ...card,
       id: hideIdentity ? `hidden-${card.owner}-${card.zone}-${card.order}` : card.id,
       label: hideIdentity ? null : card.label,
+      definitionId: hideIdentity ? null : (card.definitionId ?? null),
       stackOn: hideIdentity ? undefined : card.stackOn,
     });
   }
@@ -223,6 +226,7 @@ export function isClientTableAction(value: unknown): value is ClientTableAction 
 function validCardShape(c: Partial<Card>): boolean {
   return typeof c.id === 'string' && c.id.length <= 100 &&
     typeof c.label === 'string' && c.label.length <= 120 &&
+    (c.definitionId === undefined || (typeof c.definitionId === 'string' && c.definitionId.length <= 100)) &&
     (c.owner === 1 || c.owner === 2 || c.owner === 3 || c.owner === 4) &&
     typeof c.zone === 'string' && ZONE_ID_PATTERN.test(c.zone) &&
     Number.isFinite(c.order) && Number.isFinite(c.x) && Number.isFinite(c.y) &&
