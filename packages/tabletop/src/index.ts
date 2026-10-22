@@ -1,3 +1,6 @@
+import { builtInCardCatalog, starterDeckForModule } from './deck.js';
+import type { GameModule } from './game-module.js';
+
 export type PlayerId = 1 | 2 | 3 | 4;
 export type CoreCardZone = 'deck' | 'hand' | 'field' | 'discard';
 export type CardZone = string;
@@ -8,6 +11,7 @@ const ZONE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 export type Card = {
   id: string;
   label: string;
+  definitionId?: string;
   owner: PlayerId;
   zone: CardZone;
   order: number;
@@ -42,9 +46,10 @@ export type ClientTableAction =
   | { type: 'stack'; id: string; targetId: string }
   | { type: 'unstack'; id: string };
 
-export type PublicCard = Omit<Card, 'label' | 'id'> & {
+export type PublicCard = Omit<Card, 'label' | 'id' | 'definitionId'> & {
   id: string;
   label: string | null;
+  definitionId: string | null;
 };
 
 export type TableView = {
@@ -78,6 +83,38 @@ export function createInitialTable(players: PlayerId[]): TableState {
   return {
     version: 4,
     cards: unique.flatMap(player => buildDeck(player, `p${player}`)),
+  };
+}
+
+export function createInitialTableForModule(
+  players: PlayerId[],
+  module: GameModule,
+  cardCatalog = builtInCardCatalog,
+): TableState {
+  const unique = [...new Set(players)].filter((player): player is PlayerId => player >= 1 && player <= 4);
+  const deck = starterDeckForModule(module, cardCatalog);
+  const catalog = new Map(cardCatalog
+    .filter(card => card.moduleId === module.id && card.moduleVersion === module.version)
+    .map(card => [card.id, card]));
+
+  return {
+    version: 4,
+    cards: unique.flatMap(owner => deck.cards.flatMap((definitionId, index) => {
+      const definition = catalog.get(definitionId);
+      if (!definition) return [];
+      return [{
+        id: `p${owner}-${definitionId}-${index + 1}`,
+        definitionId,
+        label: definition.name,
+        owner,
+        zone: 'deck',
+        order: index,
+        x: 0,
+        y: 0,
+        rotation: owner === 2 ? 180 : owner === 3 ? 90 : owner === 4 ? 270 : 0,
+        faceUp: false,
+      } satisfies Card];
+    })),
   };
 }
 
@@ -202,6 +239,7 @@ export function projectTable(
       ...card,
       id: hideIdentity ? `hidden-${card.owner}-${card.zone}-${card.order}` : card.id,
       label: hideIdentity ? null : card.label,
+      definitionId: hideIdentity ? null : (card.definitionId ?? null),
       stackOn: hideIdentity ? undefined : card.stackOn,
     });
   }
@@ -223,6 +261,7 @@ export function isClientTableAction(value: unknown): value is ClientTableAction 
 function validCardShape(c: Partial<Card>): boolean {
   return typeof c.id === 'string' && c.id.length <= 100 &&
     typeof c.label === 'string' && c.label.length <= 120 &&
+    (c.definitionId === undefined || (typeof c.definitionId === 'string' && c.definitionId.length <= 100)) &&
     (c.owner === 1 || c.owner === 2 || c.owner === 3 || c.owner === 4) &&
     typeof c.zone === 'string' && ZONE_ID_PATTERN.test(c.zone) &&
     Number.isFinite(c.order) && Number.isFinite(c.x) && Number.isFinite(c.y) &&
@@ -236,6 +275,33 @@ export function isTableState(value: unknown): value is TableState {
   return v.version === 4 && Array.isArray(v.cards) && v.cards.length <= 500 && v.cards.every(validCardShape);
 }
 
+
+
+export type TableSaveFile = {
+  fileSchemaVersion: 1;
+  moduleId: string;
+  moduleVersion: string;
+  table: TableState;
+};
+
+export function createTableSaveFile(state: TableState, module: Pick<GameModule, 'id' | 'version'>): TableSaveFile {
+  return {
+    fileSchemaVersion: 1,
+    moduleId: module.id,
+    moduleVersion: module.version,
+    table: state,
+  };
+}
+
+export function isTableSaveFile(value: unknown): value is TableSaveFile {
+  if (!value || typeof value !== 'object') return false;
+  const file = value as Partial<TableSaveFile>;
+  return file.fileSchemaVersion === 1 &&
+    typeof file.moduleId === 'string' && ZONE_ID_PATTERN.test(file.moduleId) &&
+    typeof file.moduleVersion === 'string' && file.moduleVersion.length >= 1 && file.moduleVersion.length <= 40 &&
+    isTableState(file.table);
+}
+
 export function migrateTableState(value: unknown): TableState | null {
   if (isTableState(value)) return value;
   if (!value || typeof value !== 'object') return null;
@@ -246,3 +312,7 @@ export function migrateTableState(value: unknown): TableState | null {
 }
 
 export * from './game-module.js';
+
+export * from './deck.js';
+
+export * from './module-package.js';

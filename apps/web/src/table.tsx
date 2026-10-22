@@ -1,15 +1,21 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { CardInspector } from './card-inspector';
+import { DeckTools } from './deck-tools';
 import { actionForCode, displayKey, type KeyBindings } from './controls';
 import {
   applyAction,
   canManipulate,
-  builtInGameModules,
+  builtInModulePackages,
+  createTableSaveFile,
   genericDuelModule,
   initialTable,
+  isTableSaveFile,
   migrateTableState,
+  modulePackageKey,
   type Card,
+  type DeckDefinition,
   type GameModule,
+  type ModulePackage,
   type PlayerId,
   type TableState,
 } from '@rb-unbound/tabletop';
@@ -23,9 +29,10 @@ function shuffled<T>(items: T[]): T[] {
   return copy;
 }
 
-export function Table({ bindings }: { bindings: KeyBindings }) {
-  const [moduleId, setModuleId] = useState(genericDuelModule.id);
-  const activeModule = builtInGameModules.find(module => module.id === moduleId) ?? genericDuelModule;
+export function Table({ bindings, modulePackages }: { bindings: KeyBindings; modulePackages: ModulePackage[] }) {
+  const [moduleKey, setModuleKey] = useState(modulePackageKey(genericDuelModule));
+  const activePackage = modulePackages.find(bundle => modulePackageKey(bundle.module) === moduleKey) ?? builtInModulePackages[0];
+  const activeModule = activePackage.module;
   const zoneFor = (kind: Card['zone']) => activeModule.zones.find(zone => zone.kind === kind);
   const zoneLabel = (kind: Card['zone']) => zoneFor(kind)?.label ?? kind;
   const cardBack = activeModule.cardBacks[0];
@@ -65,10 +72,11 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
   }), [table.cards]);
 
   const save = () => {
-    const url = URL.createObjectURL(new Blob([JSON.stringify(table, null, 2)], { type: 'application/json' }));
+    const saveFile = createTableSaveFile(table, activeModule);
+    const url = URL.createObjectURL(new Blob([JSON.stringify(saveFile, null, 2)], { type: 'application/json' }));
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = 'rb-unbound-table-v4.json';
+    anchor.download = `rb-unbound-${activeModule.id}-table.json`;
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -78,14 +86,25 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
     try {
       if (file.size > 250_000) throw Error('File too large');
       const parsed: unknown = JSON.parse(await file.text());
-      const migrated = migrateTableState(parsed);
-      if (!migrated) throw Error('Invalid table file');
-      setTable(migrated);
+      if (isTableSaveFile(parsed)) {
+        const required = modulePackages.find(bundle =>
+          bundle.module.id === parsed.moduleId && bundle.module.version === parsed.moduleVersion);
+        if (!required) {
+          setError(`This table requires ${parsed.moduleId} v${parsed.moduleVersion}, which is not installed.`);
+          return;
+        }
+        setModuleKey(modulePackageKey(required.module));
+        setTable(parsed.table);
+      } else {
+        const migrated = migrateTableState(parsed);
+        if (!migrated) throw Error('Invalid table file');
+        setTable(migrated);
+      }
       setSelected('');
       setStackTarget('');
       setError('');
     } catch {
-      setError('Could not load this table file. RB Unbound v3/v4 table files are supported.');
+      setError('Could not load this table file. Current saves and legacy v3/v4 table files are supported.');
     }
   };
 
@@ -95,6 +114,39 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
       .sort((a, b) => a.order - b.order)
       .map(card => card.id);
     execute({ type: 'shuffle', player, orderedIds: shuffled(ids) });
+  };
+
+  const loadDeckForPlayerOne = (deck: DeckDefinition) => {
+    if (deck.moduleId !== activeModule.id || deck.moduleVersion !== activeModule.version) {
+      setError('That deck does not match the active module.');
+      return;
+    }
+    const catalog = new Map(activePackage.cards.map(card => [card.id, card]));
+    const cards = deck.cards.map((definitionId, index) => {
+      const definition = catalog.get(definitionId);
+      if (!definition) return null;
+      return {
+        id: `p1-${definitionId}-${index + 1}`,
+        definitionId,
+        label: definition.name,
+        owner: 1 as PlayerId,
+        zone: 'deck',
+        order: index,
+        x: 0,
+        y: 0,
+        rotation: 0,
+        faceUp: false,
+      };
+    }).filter((card): card is NonNullable<typeof card> => Boolean(card));
+
+    setTable(state => ({
+      ...state,
+      cards: [...state.cards.filter(card => card.owner !== 1), ...cards],
+    }));
+    setSelected('');
+    setMultiSelected([]);
+    setPinned('');
+    setError('');
   };
 
   const targets = selectedCards.length ? selectedCards : (selectedCard ? [selectedCard] : []);
@@ -288,8 +340,11 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
     <section className="viewer-bar">
       <strong>Local player view</strong>
       <label className="module-picker">Module
-        <select value={moduleId} onChange={e => setModuleId(e.target.value)}>
-          {builtInGameModules.map((module: GameModule) => <option key={module.id} value={module.id}>{module.name}</option>)}
+        <select value={modulePackageKey(activeModule)} onChange={e => setModuleKey(e.target.value)}>
+          {modulePackages.map(bundle => {
+            const module: GameModule = bundle.module;
+            return <option key={modulePackageKey(module)} value={modulePackageKey(module)}>{module.name} · v{module.version}</option>;
+          })}
         </select>
       </label>
       <button className={viewer === 1 ? 'active' : ''} onClick={() => { setViewer(1); setSelected(''); }}>Player 1</button>
@@ -341,7 +396,7 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
     {error && <p className="error" role="alert">{error}</p>}
 
     <div className="play-area">
-      <CardInspector card={inspectorCard} pinned={inspectorPinned} onClear={() => setPinned('')} />
+      <CardInspector card={inspectorCard} pinned={inspectorPinned} onClear={() => setPinned('')} module={activeModule} catalog={activePackage.cards} />
       <div
         className="board"
         ref={boardRef}
@@ -406,6 +461,8 @@ export function Table({ bindings }: { bindings: KeyBindings }) {
         {renderPlayer(1)}
       </div>
     </div>
+
+    <DeckTools module={activeModule} catalog={activePackage.cards} onLoadDeck={loadDeckForPlayerOne} />
 
     <footer>
       {activeModule.description} · Draw from your {zoneLabel('deck').toLowerCase()} · Double-click a {zoneLabel('hand').toLowerCase()} card to play it · Drag your {zoneLabel('field').toLowerCase()} cards.
