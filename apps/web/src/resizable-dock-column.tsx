@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 
 const MIN_WIDTH = 190;
 const MAX_WIDTH = 420;
@@ -20,7 +20,7 @@ export function ResizableDockColumn({ children }: { children: ReactNode }) {
     window.localStorage.setItem(STORAGE_KEY, String(width));
   }, [width]);
 
-  const beginResize = (event: React.PointerEvent<HTMLDivElement>) => {
+  const beginResize = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0) return;
     event.preventDefault();
     const startX = event.clientX;
