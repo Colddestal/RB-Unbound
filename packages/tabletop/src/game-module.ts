@@ -21,6 +21,11 @@ export type ModuleZoneDefinition = {
   parentZoneId?: string;
   /** Optional hard capacity hint. A slot must have capacity 1. */
   capacity?: number;
+  /** Declarative pile interactions. Only valid on pile behavior zones. */
+  pile?: {
+    drawToZoneId?: string;
+    shuffle?: boolean;
+  };
   stackable?: boolean;
   defaultPosition?: {
     x: number;
@@ -92,6 +97,11 @@ export function isGameModule(value: unknown): value is GameModule {
     if (zone.capacity !== undefined && (!Number.isInteger(zone.capacity) || zone.capacity < 1 || zone.capacity > 500)) return false;
     if (zone.behavior === 'slot' && zone.capacity !== undefined && zone.capacity !== 1) return false;
     if (zone.behavior === 'subzone' && !zone.parentZoneId) return false;
+    if (zone.pile !== undefined) {
+      if (zoneBehavior(zone) !== 'pile') return false;
+      if (zone.pile.drawToZoneId !== undefined && !validId(zone.pile.drawToZoneId)) return false;
+      if (zone.pile.shuffle !== undefined && typeof zone.pile.shuffle !== 'boolean') return false;
+    }
     if (zone.stackable !== undefined && typeof zone.stackable !== 'boolean') return false;
     if (zone.defaultPosition) {
       if (!Number.isFinite(zone.defaultPosition.x) || !Number.isFinite(zone.defaultPosition.y)) return false;
@@ -111,6 +121,7 @@ export function isGameModule(value: unknown): value is GameModule {
 
   for (const zone of module.zones) {
     if (zone.parentZoneId && !zoneIds.has(zone.parentZoneId)) return false;
+    if (zone.pile?.drawToZoneId && !zoneIds.has(zone.pile.drawToZoneId)) return false;
     if (!zone.parentZoneId) continue;
     const visited = new Set<string>([zone.id]);
     let parentId: string | undefined = zone.parentZoneId;
@@ -164,6 +175,24 @@ export function moduleZoneByRole(module: GameModule, role: string): ModuleZoneDe
   return module.zones.find(zone => zone.role === role);
 }
 
+export function pileCapabilities(module: GameModule, zone: ModuleZoneDefinition): {
+  drawToZoneId?: string;
+  shuffle: boolean;
+} {
+  if (zoneBehavior(zone) !== 'pile') return { shuffle: false };
+  if (zone.pile) return {
+    ...(zone.pile.drawToZoneId ? { drawToZoneId: zone.pile.drawToZoneId } : {}),
+    shuffle: zone.pile.shuffle === true,
+  };
+
+  // Backward compatibility for existing schema-v1 deck zones.
+  if (zone.kind === 'deck') {
+    const hand = module.zones.find(candidate => candidate.kind === 'hand');
+    return { drawToZoneId: hand?.id ?? 'hand', shuffle: true };
+  }
+  return { shuffle: false };
+}
+
 export const genericDuelModule: GameModule = {
   schemaVersion: 1,
   id: 'generic-duel',
@@ -172,7 +201,7 @@ export const genericDuelModule: GameModule = {
   description: 'Original game-neutral example module for validating the RB Unbound module format.',
   supportedFormats: ['1v1', '2v2', 'ffa4'],
   zones: [
-    { id: 'deck', label: 'Deck', kind: 'deck', visibility: 'hidden', ownerScoped: true, behavior: 'pile', role: 'main-deck', seatPositions: {
+    { id: 'deck', label: 'Deck', kind: 'deck', visibility: 'hidden', ownerScoped: true, behavior: 'pile', role: 'main-deck', pile: { drawToZoneId: 'hand', shuffle: true }, seatPositions: {
       '1': { x: 70, y: 470 },
       '2': { x: 850, y: 40 },
     } },
@@ -202,7 +231,7 @@ export const frontierSkirmishModule: GameModule = {
   description: 'Second original module used to prove that RB Unbound presentation can swap without core tabletop changes.',
   supportedFormats: ['1v1', '2v2'],
   zones: [
-    { id: 'deck', label: 'Deck', kind: 'deck', visibility: 'hidden', ownerScoped: true, behavior: 'pile', role: 'main-deck', seatPositions: {
+    { id: 'deck', label: 'Deck', kind: 'deck', visibility: 'hidden', ownerScoped: true, behavior: 'pile', role: 'main-deck', pile: { drawToZoneId: 'hand', shuffle: true }, seatPositions: {
       '1': { x: 885, y: 355 },
       '2': { x: 115, y: 245 },
     }, size: { width: 95, height: 120 } },
@@ -225,7 +254,7 @@ export const frontierSkirmishModule: GameModule = {
       '1': { x: 875, y: 455 },
       '2': { x: 125, y: 145 },
     }, size: { width: 95, height: 105 } },
-    { id: 'resource-deck', label: 'Resource Deck', kind: 'custom', visibility: 'hidden', ownerScoped: true, behavior: 'pile', role: 'resource-deck', seatPositions: {
+    { id: 'resource-deck', label: 'Resource Deck', kind: 'custom', visibility: 'hidden', ownerScoped: true, behavior: 'pile', role: 'resource-deck', pile: { drawToZoneId: 'resources', shuffle: true }, seatPositions: {
       '1': { x: 120, y: 555 },
       '2': { x: 880, y: 45 },
     }, size: { width: 95, height: 90 } },
