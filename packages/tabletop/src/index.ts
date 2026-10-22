@@ -215,4 +215,4 @@ export function isTableState(value: unknown): value is TableState {
     (c.stackOn === undefined || (typeof c.stackOn === 'string' && c.stackOn.length <= 100)));
 }
 
-export * from './game-module';
+export * from './game-module.js';
