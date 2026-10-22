@@ -85,7 +85,7 @@ describe('CardInspector', () => {
     />);
     expect(screen.getByText('Leader')).toBeInTheDocument();
     expect(screen.getByText('3')).toBeInTheDocument();
-    expect(screen.getByText('Command Post')).toBeInTheDocument();
+    expect(screen.queryByText('Command Post')).not.toBeInTheDocument();
   });
 
   it('does not resolve module metadata for a hidden card', () => {
