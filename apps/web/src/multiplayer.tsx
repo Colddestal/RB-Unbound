@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { CardInspector } from './card-inspector';
+import { DeckPile } from './deck-pile';
 import { toCanonicalPoint, toViewerPoint, toViewerSeat } from './board-perspective';
 import { actionForCode, displayKey, type KeyBindings } from './controls';
 import {
@@ -180,6 +181,10 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   const emitAction = (action: ClientTableAction) => {
     actionSequenceRef.current += 1;
     socket?.emit('match:action', { sequence: actionSequenceRef.current, action });
+  };
+
+  const drawCards = (count: number) => {
+    for (let index = 0; index < count; index += 1) emitAction({ type: 'draw' });
   };
 
   useEffect(() => {
@@ -434,7 +439,6 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           if (!seat?.occupied) return null;
           return <div className="player-summary" key={player}><strong>P{player} · Team {seat.team}</strong><span>Deck {summary?.deckCount ?? 0}</span><span>Hand {summary?.handCount ?? 0}</span></div>;
         })}
-        {!identity?.spectator && <div className="button-column"><button onClick={() => emitAction({ type: 'draw' })}>Draw</button><button onClick={() => emitAction({ type: 'shuffle' })}>Shuffle deck</button></div>}
         </aside>
       </div>
 
@@ -504,6 +508,29 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
             event.currentTarget.releasePointerCapture(event.pointerId);
           }}
         >
+          {activeModule.zones.filter(zone => zone.kind === 'deck' && zone.size).flatMap(zone => {
+            return room.seats.filter(seat => seat.occupied).flatMap(seat => {
+              const player = seat.seat as PlayerId;
+              const position = zoneAreaPosition(zone, player);
+              if (!position) return [];
+              const count = hiddenByOwner.get(player)?.deckCount ?? 0;
+              const interactive = !identity?.spectator && identity?.seat === player;
+              return [<DeckPile
+                key={`deck-pile-${player}`}
+                label={zone.label}
+                count={count}
+                pattern={cardBack.pattern}
+                interactive={interactive}
+                style={{
+                  left: `${position.x / 10}%`,
+                  top: `${position.y / 6}%`,
+                  transform: 'translate(-50%,-50%)',
+                }}
+                onDraw={amount => drawCards(amount)}
+                onShuffle={() => emitAction({ type: 'shuffle' })}
+              />];
+            });
+          })}
           {activeModule.zones.filter(zone => zone.kind !== 'hand' && zone.size).flatMap(zone => {
             const players: Array<PlayerId | undefined> = zone.ownerScoped
               ? room.seats.filter(seat => seat.occupied).map(seat => seat.seat as PlayerId)
