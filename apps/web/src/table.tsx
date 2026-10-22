@@ -423,6 +423,10 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
         style={{
           left: `${zonePosition('deck', player).x / 10}%`,
           top: `${zonePosition('deck', player).y / 6}%`,
+          ...(zoneFor('deck')?.size ? {
+            width: `${zoneFor('deck')!.size!.width / 10}%`,
+            height: `${zoneFor('deck')!.size!.height / 6}%`,
+          } : {}),
         }}
         onDraw={count => drawCards(player, count)}
         onShuffle={() => shuffleDeck(player)}
@@ -430,6 +434,10 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       <div className="discard-zone" style={{
         left: `${zonePosition('discard', player).x / 10}%`,
         top: `${zonePosition('discard', player).y / 6}%`,
+        ...(zoneFor('discard')?.size ? {
+          width: `${zoneFor('discard')!.size!.width / 10}%`,
+          height: `${zoneFor('discard')!.size!.height / 6}%`,
+        } : {}),
       }}><span>{zoneLabel('discard').toUpperCase()} · {discard.length}</span></div>
       {discard.slice(-6).map((card, index) => renderCard(card, index, discard, 'discard'))}
       {hand.map((card, index) => renderCard(card, index, hand, 'hand'))}
@@ -442,7 +450,12 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
           return <button
             key={card.id}
             className={`card custom-zone-card ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${card.faceUp ? '' : `back back-${cardBack.pattern}`}`}
-            style={{ left: `calc(${position.x / 10}% + ${styleOffset}px)`, top: `calc(${position.y / 6}% + ${styleOffset}px)`, zIndex: 30 + index }}
+            style={{
+              left: `calc(${position.x / 10}% + ${styleOffset}px)`,
+              top: `calc(${position.y / 6}% + ${styleOffset}px)`,
+              transform: `translate(-50%,-50%) rotate(${card.rotation}deg)`,
+              zIndex: 30 + index,
+            }}
             onMouseEnter={() => setHovered(card.id)}
             onMouseLeave={() => setHovered('')}
             onClick={() => { setSelected(card.id); setMultiSelected([]); setPinned(card.id); }}
