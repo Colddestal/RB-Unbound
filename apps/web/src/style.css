@@ -142,3 +142,10 @@ button:focus-visible,select:focus-visible,input:focus-visible,.card:focus-visibl
 .inspector-metadata{margin-top:14px;padding-top:12px;border-top:1px solid #32465a}
 .inspector-metadata .eyebrow{display:block;margin-bottom:8px}
 .inspector-metadata dd{max-width:130px;text-align:right;overflow-wrap:anywhere}
+
+.module-package-list{display:grid;gap:8px;margin:16px 0}
+.module-package-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:8px;align-items:center;padding:10px;border:1px solid #293d54;border-radius:9px;background:#0b1724}
+.module-package-row>div{display:grid;gap:3px;min-width:0}
+.module-package-row>div span{font-size:11px;color:#7f91a4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.module-package-row button{background:#1b2d45;color:#edf3fc;border:1px solid #40536e;border-radius:8px;padding:7px 9px}
+@media(max-width:700px){.module-package-row{grid-template-columns:1fr auto}.module-package-row button{grid-column:auto}}
