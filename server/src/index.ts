@@ -9,6 +9,7 @@ import {
   leaveRoom,
   occupySeat,
   requiredSeats,
+  normalizeSpectatorLimit,
   setReady,
   setRoomSettings,
   startRoom,
@@ -567,6 +568,9 @@ async function restoreState(): Promise<void> {
       settings: {
         ...savedRoom.settings,
         bestOf: savedRoom.settings.bestOf === 3 ? 3 : 1,
+        spectatorLimit: normalizeSpectatorLimit(savedRoom.settings.spectatorLimit, 4),
+        allowSpectators: savedRoom.settings.allowSpectators !== false &&
+          normalizeSpectatorLimit(savedRoom.settings.spectatorLimit, 4) > 0,
         moduleId: restoredModule.id,
         moduleVersion: restoredModule.version,
       },
@@ -656,7 +660,7 @@ io.on('connection', socket => {
     scheduleSave();
   });
 
-  socket.on('room:create', (payload: { displayName?: unknown; roomName?: unknown; format?: unknown; bestOf?: unknown; isPublic?: unknown; moduleId?: unknown; moduleVersion?: unknown; modulePackage?: unknown } = {}) => {
+  socket.on('room:create', (payload: { displayName?: unknown; roomName?: unknown; format?: unknown; bestOf?: unknown; isPublic?: unknown; spectatorLimit?: unknown; moduleId?: unknown; moduleVersion?: unknown; modulePackage?: unknown } = {}) => {
     if (currentSession(socket)) return fail(socket, 'Leave your current room first.');
     const displayName = safeName(payload.displayName);
     if (!displayName) return fail(socket, 'Choose a display name between 1 and 32 characters.');
@@ -675,9 +679,12 @@ io.on('connection', socket => {
     if (!moduleSupportsFormat(selectedModule, format)) return fail(socket, 'That game module does not support this match format.');
     const roomName = typeof payload.roomName === 'string' ? payload.roomName.trim().slice(0, 60) : '';
     const isPublic = payload.isPublic === true;
+    const spectatorLimit = normalizeSpectatorLimit(payload.spectatorLimit, 4);
     let room = createRoom(code(), memberId, displayName, {
       format,
       bestOf,
+      spectatorLimit,
+      allowSpectators: spectatorLimit > 0,
       moduleId: selectedModule.id,
       moduleVersion: selectedModule.version,
       isPublic,
@@ -729,7 +736,11 @@ io.on('connection', socket => {
 
     const memberId = randomUUID();
     const updated = addSpectator(room, memberId, displayName);
-    if (updated === room) return fail(socket, 'Spectators are disabled or you are already in this room.');
+    if (updated === room) {
+      if (!room.settings.allowSpectators || room.settings.spectatorLimit < 1) return fail(socket, 'Spectators are disabled for this room.');
+      if (room.spectators.length >= room.settings.spectatorLimit) return fail(socket, 'All spectator slots are full.');
+      return fail(socket, 'You are already in this room.');
+    }
 
     rooms.set(roomCode, updated);
     establishSession(socket, updated, displayName, memberId, undefined, true);
@@ -772,6 +783,10 @@ io.on('connection', socket => {
     if (payload.ruleset === 'standard' || payload.ruleset === 'unrestricted' || payload.ruleset === 'custom') safePatch.ruleset = payload.ruleset;
     if (typeof payload.isPublic === 'boolean') safePatch.isPublic = payload.isPublic;
     if (typeof payload.allowSpectators === 'boolean') safePatch.allowSpectators = payload.allowSpectators;
+    if (typeof payload.spectatorLimit === 'number' && Number.isInteger(payload.spectatorLimit) && payload.spectatorLimit >= 0 && payload.spectatorLimit <= 4) {
+      safePatch.spectatorLimit = payload.spectatorLimit;
+      if (payload.spectatorLimit === 0) safePatch.allowSpectators = false;
+    }
     if (typeof payload.readyCheck === 'boolean') safePatch.readyCheck = payload.readyCheck;
     if (typeof payload.shareTeamHands === 'boolean') safePatch.shareTeamHands = payload.shareTeamHands;
     const requestedBestOf = safeBestOf(payload.bestOf);
