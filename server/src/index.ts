@@ -785,6 +785,9 @@ io.on('connection', socket => {
     if (typeof payload.isPublic === 'boolean') safePatch.isPublic = payload.isPublic;
     if (typeof payload.allowSpectators === 'boolean') safePatch.allowSpectators = payload.allowSpectators;
     if (typeof payload.spectatorLimit === 'number' && Number.isInteger(payload.spectatorLimit) && payload.spectatorLimit >= 0 && payload.spectatorLimit <= 4) {
+      if (payload.spectatorLimit < room.spectators.length) {
+        return fail(socket, `Spectator limit cannot be lower than the ${room.spectators.length} currently connected spectator${room.spectators.length === 1 ? '' : 's'}.`);
+      }
       safePatch.spectatorLimit = payload.spectatorLimit;
       if (payload.spectatorLimit === 0) safePatch.allowSpectators = false;
     }
