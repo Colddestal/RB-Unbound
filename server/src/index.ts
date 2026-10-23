@@ -338,6 +338,7 @@ function moduleZonePolicy(room: RoomState) {
     module,
     allowedZones: module.zones.map(zone => zone.id),
     stackableZones: module.zones.filter(zone => zone.stackable).map(zone => zone.id),
+    zoneGroups: new Map(module.zones.map(zone => [zone.id, zone.group ?? zone.id] as const)),
     publicZones: module.zones.filter(zone => zone.visibility === 'public').map(zone => zone.id),
     pileZones: module.zones.filter(zone => zoneBehavior(zone) === 'pile').map(zone => zone.id),
     publicCountZones: module.zones
@@ -869,7 +870,7 @@ io.on('connection', socket => {
     const action = toServerAction(match.table, session.seat, payload.action, policy.drawDestinations, policy.shuffleZones);
     if (!action) return fail(socket, 'Unsupported match action.');
     const before = match.table;
-    const updated = applyAction(before, action, policy.allowedZones, policy.stackableZones);
+    const updated = applyAction(before, action, policy.allowedZones, policy.stackableZones, policy.zoneGroups);
     if (updated === before) {
       socket.emit('match:action-rejected', { reason: 'not-allowed', sequence, lastSequence, revision: match.revision });
       return;
