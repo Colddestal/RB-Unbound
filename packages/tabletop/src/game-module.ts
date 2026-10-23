@@ -19,6 +19,8 @@ export type ModuleZoneDefinition = {
   role?: string;
   /** Logical interaction group. Zones in the same group can be treated as one broader play area. */
   group?: string;
+  /** Presentation layout for untouched cards in this zone. */
+  cardLayout?: 'stack' | 'horizontal';
   /** Parent zone for visual/rules nesting, e.g. a facedown sub-zone inside a location. */
   parentZoneId?: string;
   /** Optional hard capacity hint. A slot must have capacity 1. */
@@ -102,6 +104,7 @@ export function isGameModule(value: unknown): value is GameModule {
     if (zone.behavior !== undefined && !['pile', 'hand', 'slot', 'area', 'location', 'subzone'].includes(zone.behavior)) return false;
     if (zone.role !== undefined && !validId(zone.role)) return false;
     if (zone.group !== undefined && !validId(zone.group)) return false;
+    if (zone.cardLayout !== undefined && zone.cardLayout !== 'stack' && zone.cardLayout !== 'horizontal') return false;
     if (zone.parentZoneId !== undefined && !validId(zone.parentZoneId)) return false;
     if (zone.parentZoneId === zone.id) return false;
     if (zone.capacity !== undefined && (!Number.isInteger(zone.capacity) || zone.capacity < 1 || zone.capacity > 500)) return false;
@@ -319,6 +322,7 @@ export const frontierSkirmishModule: GameModule = {
       behavior: 'area',
       role: 'runes',
       group: 'runes',
+      cardLayout: 'horizontal',
       stackable: true,
       seatPositions: {
         '1': { x: 500, y: 485 },
