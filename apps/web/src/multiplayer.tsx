@@ -38,6 +38,7 @@ type RoomSnapshot = {
     ruleset: Ruleset;
     isPublic: boolean;
     allowSpectators: boolean;
+    spectatorLimit: number;
     readyCheck: boolean;
     shareTeamHands: boolean;
     bestOf: 1 | 3;
@@ -87,6 +88,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   const [format, setFormat] = useState<MatchFormat>('1v1');
   const [createModuleKey, setCreateModuleKey] = useState(modulePackageKey(defaultGameModule));
   const [createPublic, setCreatePublic] = useState(false);
+  const [createSpectatorLimit, setCreateSpectatorLimit] = useState(4);
   const [joinCode, setJoinCode] = useState('');
   const [joinInviteCode, setJoinInviteCode] = useState('');
   const [inviteCode, setInviteCode] = useState('');
@@ -302,6 +304,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
       moduleVersion: selectedPackage.module.version,
       modulePackage: selectedPackage,
       isPublic: createPublic,
+      spectatorLimit: createSpectatorLimit,
     });
   };
 
@@ -413,6 +416,14 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           }}>
             <option value="1v1">1v1</option><option value="2v2">2v2</option><option value="ffa4">1v1v1v1</option>
           </select></label>
+          <p className="muted">{format === '1v1' ? '2 player seats' : '4 player seats'} · spectators are separate and optional.</p>
+          <label>Spectator slots<select value={createSpectatorLimit} onChange={e => setCreateSpectatorLimit(Number(e.target.value))}>
+            <option value={0}>0 · Disabled</option>
+            <option value={1}>1</option>
+            <option value={2}>2</option>
+            <option value={3}>3</option>
+            <option value={4}>4 · Max</option>
+          </select></label>
           <label>Game module<select value={createModuleKey} onChange={e => setCreateModuleKey(e.target.value)}>
             {compatibleCreatePackages.map(bundle => {
               const module: GameModule = bundle.module;
@@ -430,9 +441,10 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           <label>Display name<input value={displayName} maxLength={32} onChange={e => setDisplayName(e.target.value)} /></label>
           <label>Room code<input value={joinCode} maxLength={6} onChange={e => setJoinCode(e.target.value.toUpperCase())} /></label>
           <label>Invite code <span className="muted">(private rooms only)</span><input value={joinInviteCode} maxLength={8} onChange={e => setJoinInviteCode(e.target.value.toUpperCase())} /></label>
-          <label>Seat<select value={joinSeat} onChange={e => setJoinSeat(Number(e.target.value) as 1 | 2 | 3 | 4)}>
+          <label>Player seat<select value={joinSeat} onChange={e => setJoinSeat(Number(e.target.value) as 1 | 2 | 3 | 4)}>
             <option value={1}>Seat 1</option><option value={2}>Seat 2</option><option value={3}>Seat 3</option><option value={4}>Seat 4</option>
           </select></label>
+          <p className="muted">1v1 rooms use Seats 1–2. 2v2 / FFA use Seats 1–4. Use Spectate for an optional spectator slot.</p>
           <div className="button-row">
             <button className="primary" disabled={!connected} onClick={() => join(false)}>Join seat</button>
             <button disabled={!connected} onClick={() => join(true)}>Spectate</button>
@@ -458,10 +470,21 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
     {room.status === 'lobby' && <div className="lobby-grid">
       <section className="panel">
         <h2>Seats</h2>
-        <div className="seat-list">{room.seats.map(seat =>
+        <div className="seat-list">{room.seats
+          .filter(seat => room.settings.format !== '1v1' || seat.seat <= 2)
+          .map(seat =>
           <div className={`seat-row ${seat.occupied ? 'occupied' : ''}`} key={seat.seat}>
             <strong>Seat {seat.seat}</strong><span>{seat.displayName ?? 'Open'}</span><span>Team {seat.team}</span><span>{seat.ready ? 'Ready' : 'Not ready'}</span>{seat.owner && <span className="chip">Owner</span>}
           </div>)}</div>
+        <h3 className="spectator-heading">Spectators · {room.spectators.length}/{room.settings.spectatorLimit}</h3>
+        <div className="spectator-slot-list">{Array.from({ length: room.settings.spectatorLimit }, (_, index) => {
+          const spectator = room.spectators[index];
+          return <div className={`spectator-slot ${spectator ? 'occupied' : ''}`} key={index}>
+            <strong>Spectator {index + 1}</strong>
+            <span>{spectator?.displayName ?? 'Open'}</span>
+            <span className="muted">Optional</span>
+          </div>;
+        })}</div>
         {identity?.seat && <button onClick={() => socket?.emit('room:ready', { ready: !ownSeat?.ready })}>{ownSeat?.ready ? 'Unready' : 'Ready up'}</button>}
       </section>
 
@@ -493,7 +516,17 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           <option value="standard">Standard</option><option value="unrestricted">Unrestricted</option><option value="custom">Custom</option>
         </select></label>
         <label className="inline-check"><input disabled={!isOwner} type="checkbox" checked={room.settings.isPublic} onChange={e => socket?.emit('room:settings', { isPublic: e.target.checked })}/> Public room</label>
-        <label className="inline-check"><input disabled={!isOwner} type="checkbox" checked={room.settings.allowSpectators} onChange={e => socket?.emit('room:settings', { allowSpectators: e.target.checked })}/> Allow spectators</label>
+        <label>Spectator slots<select disabled={!isOwner} value={room.settings.spectatorLimit} onChange={e => {
+          const spectatorLimit = Number(e.target.value);
+          socket?.emit('room:settings', { spectatorLimit, allowSpectators: spectatorLimit > 0 });
+        }}>
+          <option value={0}>0 · Disabled</option>
+          <option value={1}>1</option>
+          <option value={2}>2</option>
+          <option value={3}>3</option>
+          <option value={4}>4 · Max</option>
+        </select></label>
+        <p className="muted">Spectators never count toward player seats, readiness, or match start requirements.</p>
         <label className="inline-check"><input disabled={!isOwner} type="checkbox" checked={room.settings.readyCheck} onChange={e => socket?.emit('room:settings', { readyCheck: e.target.checked })}/> Require ready check</label>
         {room.settings.format === '2v2' && <label className="inline-check"><input disabled={!isOwner} type="checkbox" checked={room.settings.shareTeamHands} onChange={e => socket?.emit('room:settings', { shareTeamHands: e.target.checked })}/> Share teammate hands</label>}
         {isOwner && <div className="button-row"><button className="primary" onClick={() => socket?.emit('room:start', { force: false })}>Start</button><button onClick={() => socket?.emit('room:start', { force: true })}>Force start</button></div>}
