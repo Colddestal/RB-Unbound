@@ -38,6 +38,7 @@ type RoomSnapshot = {
     ruleset: Ruleset;
     isPublic: boolean;
     allowSpectators: boolean;
+    spectatorLimit: number;
     readyCheck: boolean;
     shareTeamHands: boolean;
     bestOf: 1 | 3;
@@ -87,6 +88,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   const [format, setFormat] = useState<MatchFormat>('1v1');
   const [createModuleKey, setCreateModuleKey] = useState(modulePackageKey(defaultGameModule));
   const [createPublic, setCreatePublic] = useState(false);
+  const [createSpectatorLimit, setCreateSpectatorLimit] = useState(4);
   const [joinCode, setJoinCode] = useState('');
   const [joinInviteCode, setJoinInviteCode] = useState('');
   const [inviteCode, setInviteCode] = useState('');
@@ -190,15 +192,38 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
       ? toViewerPoint(zone.defaultPosition, perspectiveViewer, room?.settings.format ?? '1v1')
       : undefined;
   };
+  const canonicalZonePosition = (zone: ModuleZoneDefinition, player?: PlayerId) => {
+    if (zone.ownerScoped && player) {
+      const seatKey = String(player) as '1' | '2' | '3' | '4';
+      return zone.seatPositions?.[seatKey] ?? zone.defaultPosition;
+    }
+    return zone.defaultPosition;
+  };
   const compatibleCreatePackages = modulePackages.filter(bundle => bundle.module.supportedFormats.includes(format));
   const ownSeat = identity?.seat ? room?.seats.find(seat => seat.seat === identity.seat) : undefined;
   const isOwner = Boolean(ownSeat?.owner);
+  const movableZoneSet = new Set(activeModule.zones.filter(zone => zone.stackable).map(zone => zone.id));
+  const zoneGroups = new Map(activeModule.zones.map(zone => [zone.id, zone.group ?? zone.id] as const));
+  const zoneGroupFor = (zoneId: string) => zoneGroups.get(zoneId) ?? zoneId;
+  const canonicalCardPoint = (card: PublicCard) => {
+    const zone = activeModule.zones.find(item => item.id === card.zone);
+    if (zone?.stackable && card.x === 0 && card.y === 0) {
+      return canonicalZonePosition(zone, card.owner) ?? { x: card.x, y: card.y };
+    }
+    return { x: card.x, y: card.y };
+  };
   const selectedCard = match?.table.cards.find(card => card.id === selected);
   const selectedCards = match?.table.cards.filter(card => multiSelected.includes(card.id)) ?? [];
   const inspectorCard = match?.table.cards.find(card => card.id === (hovered || pinned));
   const inspectorPinned = Boolean(pinned && !hovered);
   const canControlSelected = Boolean(identity?.seat && (selectedCards.length ? selectedCards.every(card => card.owner === identity.seat) : selectedCard?.owner === identity.seat));
-  const ownFieldCards = match?.table.cards.filter(card => card.zone === 'field' && card.owner === identity?.seat && card.id !== selected) ?? [];
+  const ownStackCards = selectedCard
+    ? match?.table.cards.filter(card =>
+      card.owner === identity?.seat &&
+      card.id !== selectedCard.id &&
+      movableZoneSet.has(card.zone) &&
+      zoneGroupFor(card.zone) === zoneGroupFor(selectedCard.zone)) ?? []
+    : [];
   const contextCard = cardContext ? match?.table.cards.find(card => card.id === cardContext.cardId) : undefined;
   const handZoneId = activeModule.zones.find(zone => zone.kind === 'hand')?.id;
   const discardZoneId = activeModule.zones.find(zone => zone.kind === 'discard')?.id;
@@ -233,6 +258,11 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   const moveContextCard = (zone: string) => {
     if (!contextCard || !canActOnContextCard) return;
     emitAction({ type: 'to-zone', id: contextCard.id, zone });
+    const targetZone = activeModule.zones.find(item => item.id === zone);
+    const position = targetZone?.kind === 'custom' && targetZone.stackable
+      ? canonicalZonePosition(targetZone, contextCard.owner)
+      : undefined;
+    if (position) emitAction({ type: 'move', id: contextCard.id, x: position.x, y: position.y });
   };
 
   const rotateContextCard = () => {
@@ -277,11 +307,14 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
       else if (action === 'discard') for (const card of targets) emitAction({ type: 'to-zone', id: card.id, zone: 'discard' });
       else if (action === 'moveHand') for (const card of targets) emitAction({ type: 'to-zone', id: card.id, zone: 'hand' });
       else if (action === 'playField') for (const card of targets) emitAction({ type: 'to-zone', id: card.id, zone: 'field' });
-      else if (targets.every(card => card.zone === 'field') && ['moveUp', 'moveDown', 'moveLeft', 'moveRight'].includes(action)) {
+      else if (targets.every(card => movableZoneSet.has(card.zone)) && ['moveUp', 'moveDown', 'moveLeft', 'moveRight'].includes(action)) {
         const step = event.shiftKey ? 50 : 15;
         const dx = action === 'moveLeft' ? -step : action === 'moveRight' ? step : 0;
         const dy = action === 'moveUp' ? -step : action === 'moveDown' ? step : 0;
-        for (const card of targets) emitAction({ type: 'move', id: card.id, x: card.x + dx, y: card.y + dy });
+        for (const card of targets) {
+          const point = canonicalCardPoint(card);
+          emitAction({ type: 'move', id: card.id, x: point.x + dx, y: point.y + dy });
+        }
       } else return;
 
       event.preventDefault();
@@ -302,6 +335,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
       moduleVersion: selectedPackage.module.version,
       modulePackage: selectedPackage,
       isPublic: createPublic,
+      spectatorLimit: createSpectatorLimit,
     });
   };
 
@@ -413,6 +447,14 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           }}>
             <option value="1v1">1v1</option><option value="2v2">2v2</option><option value="ffa4">1v1v1v1</option>
           </select></label>
+          <p className="muted">{format === '1v1' ? '2 player seats' : '4 player seats'} · spectators are separate and optional.</p>
+          <label>Spectator slots<select value={createSpectatorLimit} onChange={e => setCreateSpectatorLimit(Number(e.target.value))}>
+            <option value={0}>0 · Disabled</option>
+            <option value={1}>1</option>
+            <option value={2}>2</option>
+            <option value={3}>3</option>
+            <option value={4}>4 · Max</option>
+          </select></label>
           <label>Game module<select value={createModuleKey} onChange={e => setCreateModuleKey(e.target.value)}>
             {compatibleCreatePackages.map(bundle => {
               const module: GameModule = bundle.module;
@@ -430,9 +472,10 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           <label>Display name<input value={displayName} maxLength={32} onChange={e => setDisplayName(e.target.value)} /></label>
           <label>Room code<input value={joinCode} maxLength={6} onChange={e => setJoinCode(e.target.value.toUpperCase())} /></label>
           <label>Invite code <span className="muted">(private rooms only)</span><input value={joinInviteCode} maxLength={8} onChange={e => setJoinInviteCode(e.target.value.toUpperCase())} /></label>
-          <label>Seat<select value={joinSeat} onChange={e => setJoinSeat(Number(e.target.value) as 1 | 2 | 3 | 4)}>
+          <label>Player seat<select value={joinSeat} onChange={e => setJoinSeat(Number(e.target.value) as 1 | 2 | 3 | 4)}>
             <option value={1}>Seat 1</option><option value={2}>Seat 2</option><option value={3}>Seat 3</option><option value={4}>Seat 4</option>
           </select></label>
+          <p className="muted">1v1 rooms use Seats 1–2. 2v2 / FFA use Seats 1–4. Use Spectate for an optional spectator slot.</p>
           <div className="button-row">
             <button className="primary" disabled={!connected} onClick={() => join(false)}>Join seat</button>
             <button disabled={!connected} onClick={() => join(true)}>Spectate</button>
@@ -443,6 +486,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   }
 
   const fieldCards = match?.table.cards.filter(card => card.zone === 'field') ?? [];
+  const movableCards = match?.table.cards.filter(card => movableZoneSet.has(card.zone)) ?? [];
   const ownHand = match?.table.cards.filter(card => card.zone === 'hand' && card.owner === identity?.seat) ?? [];
   const teammateHands = match?.table.cards.filter(card => card.zone === 'hand' && card.owner !== identity?.seat) ?? [];
   const discards = match?.table.cards.filter(card => card.zone === 'discard') ?? [];
@@ -458,10 +502,21 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
     {room.status === 'lobby' && <div className="lobby-grid">
       <section className="panel">
         <h2>Seats</h2>
-        <div className="seat-list">{room.seats.map(seat =>
+        <div className="seat-list">{room.seats
+          .filter(seat => room.settings.format !== '1v1' || seat.seat <= 2)
+          .map(seat =>
           <div className={`seat-row ${seat.occupied ? 'occupied' : ''}`} key={seat.seat}>
             <strong>Seat {seat.seat}</strong><span>{seat.displayName ?? 'Open'}</span><span>Team {seat.team}</span><span>{seat.ready ? 'Ready' : 'Not ready'}</span>{seat.owner && <span className="chip">Owner</span>}
           </div>)}</div>
+        <h3 className="spectator-heading">Spectators · {room.spectators.length}/{room.settings.spectatorLimit}</h3>
+        <div className="spectator-slot-list">{Array.from({ length: room.settings.spectatorLimit }, (_, index) => {
+          const spectator = room.spectators[index];
+          return <div className={`spectator-slot ${spectator ? 'occupied' : ''}`} key={index}>
+            <strong>Spectator {index + 1}</strong>
+            <span>{spectator?.displayName ?? 'Open'}</span>
+            <span className="muted">Optional</span>
+          </div>;
+        })}</div>
         {identity?.seat && <button onClick={() => socket?.emit('room:ready', { ready: !ownSeat?.ready })}>{ownSeat?.ready ? 'Unready' : 'Ready up'}</button>}
       </section>
 
@@ -493,7 +548,17 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           <option value="standard">Standard</option><option value="unrestricted">Unrestricted</option><option value="custom">Custom</option>
         </select></label>
         <label className="inline-check"><input disabled={!isOwner} type="checkbox" checked={room.settings.isPublic} onChange={e => socket?.emit('room:settings', { isPublic: e.target.checked })}/> Public room</label>
-        <label className="inline-check"><input disabled={!isOwner} type="checkbox" checked={room.settings.allowSpectators} onChange={e => socket?.emit('room:settings', { allowSpectators: e.target.checked })}/> Allow spectators</label>
+        <label>Spectator slots<select disabled={!isOwner} value={room.settings.spectatorLimit} onChange={e => {
+          const spectatorLimit = Number(e.target.value);
+          socket?.emit('room:settings', { spectatorLimit, allowSpectators: spectatorLimit > 0 });
+        }}>
+          <option value={0}>0 · Disabled</option>
+          <option value={1}>1</option>
+          <option value={2}>2</option>
+          <option value={3}>3</option>
+          <option value={4}>4 · Max</option>
+        </select></label>
+        <p className="muted">Spectators never count toward player seats, readiness, or match start requirements.</p>
         <label className="inline-check"><input disabled={!isOwner} type="checkbox" checked={room.settings.readyCheck} onChange={e => socket?.emit('room:settings', { readyCheck: e.target.checked })}/> Require ready check</label>
         {room.settings.format === '2v2' && <label className="inline-check"><input disabled={!isOwner} type="checkbox" checked={room.settings.shareTeamHands} onChange={e => socket?.emit('room:settings', { shareTeamHands: e.target.checked })}/> Share teammate hands</label>}
         {isOwner && <div className="button-row"><button className="primary" onClick={() => socket?.emit('room:start', { force: false })}>Start</button><button onClick={() => socket?.emit('room:start', { force: true })}>Force start</button></div>}
@@ -552,11 +617,11 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           <button disabled={!canControlSelected} onClick={() => { const targets = selectedCards.length ? selectedCards : (selectedCard ? [selectedCard] : []); for (const card of targets) emitAction({ type: 'flip', id: card.id }); }}>Flip</button>
           <button disabled={!canControlSelected} onClick={() => { const targets = selectedCards.length ? selectedCards : (selectedCard ? [selectedCard] : []); for (const card of targets) emitAction({ type: 'to-zone', id: card.id, zone: 'hand' }); }}>To hand</button>
           <button disabled={!canControlSelected} onClick={() => { const targets = selectedCards.length ? selectedCards : (selectedCard ? [selectedCard] : []); for (const card of targets) emitAction({ type: 'to-zone', id: card.id, zone: 'discard' }); }}>Discard</button>
-          <select disabled={!canControlSelected || selectedCard?.zone !== 'field'} onChange={e => {
+          <select disabled={!canControlSelected || !selectedCard || !movableZoneSet.has(selectedCard.zone)} onChange={e => {
             if (selectedCard && e.target.value) emitAction({ type: 'stack', id: selectedCard.id, targetId: e.target.value });
             e.currentTarget.value = '';
           }} defaultValue="">
-            <option value="">Stack on…</option>{ownFieldCards.map(card => <option value={card.id} key={card.id}>{card.label ?? 'Card'}</option>)}
+            <option value="">Stack on…</option>{ownStackCards.map(card => <option value={card.id} key={card.id}>{card.label ?? 'Card'}</option>)}
           </select>
           <button disabled={!selectedCard?.stackOn || !canControlSelected} onClick={() => selectedCard && emitAction({ type: 'unstack', id: selectedCard.id })}>Unstack</button>
         </section>}
@@ -589,10 +654,10 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
             const renderedCard = event.currentTarget.querySelector<HTMLElement>('.card');
             const cardHalfWidth = (renderedCard?.offsetWidth ?? 64) / 2;
             const cardHalfHeight = (renderedCard?.offsetHeight ?? 88) / 2;
-            const ids = fieldCards
+            const ids = movableCards
               .filter(card => card.owner === identity.seat)
               .filter(card => {
-                const point = toViewerPoint({ x: card.x, y: card.y }, perspectiveViewer, room.settings.format);
+                const point = toViewerPoint(canonicalCardPoint(card), perspectiveViewer, room.settings.format);
                 const cx = (point.x / 1000) * rect.width + cardHalfWidth;
                 const cy = (point.y / 600) * rect.height + cardHalfHeight;
                 return cx >= left && cx <= right && cy >= top && cy <= bottom;
@@ -671,27 +736,70 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
                 ? zone.displayCopies
                 : [zoneAreaPosition(zone, card.owner) ?? { x: 500, y: 300 }];
               const owned = identity?.seat === card.owner && !identity?.spectator;
+              const movable = Boolean(zone.stackable);
               return rawPositions.map((rawPosition, copyIndex) => {
-                const position = !zone.ownerScoped && zone.displayCopies?.length
-                  ? toViewerPoint(rawPosition, perspectiveViewer, room.settings.format)
-                  : rawPosition;
+                const hasFreePosition = movable && (card.x !== 0 || card.y !== 0);
+                const position = hasFreePosition
+                  ? toViewerPoint({ x: card.x, y: card.y }, perspectiveViewer, room.settings.format)
+                  : (!zone.ownerScoped && zone.displayCopies?.length
+                    ? toViewerPoint(rawPosition, perspectiveViewer, room.settings.format)
+                    : rawPosition);
+                const styleOffset = hasFreePosition ? 0 : index * 7;
                 return <button
                   key={`${card.id}-${copyIndex}`}
-                  className={`card custom-zone-card ${zone.displayCopies?.length ? 'shared-card-copy' : ''} ${selected === card.id ? 'selected' : ''} ${card.faceUp ? '' : `back back-${cardBack.pattern}`} ${owned ? '' : 'locked'}`}
+                  className={`card custom-zone-card ${movable ? 'movable-zone-card' : ''} ${zone.displayCopies?.length ? 'shared-card-copy' : ''} ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${card.faceUp ? '' : `back back-${cardBack.pattern}`} ${owned ? '' : 'locked'}`}
                   style={{
-                    left: `calc(${position.x / 10}% + ${index * 7}px)`,
-                    top: `calc(${position.y / 6}% + ${index * 7}px)`,
+                    left: `calc(${position.x / 10}% + ${styleOffset}px)`,
+                    top: `calc(${position.y / 6}% + ${styleOffset}px)`,
                     transform: `translate(-50%,-50%) rotate(${card.rotation}deg)`,
                     zIndex: 30 + index,
                   }}
                   onMouseEnter={() => setHovered(card.id)}
                   onMouseLeave={() => setHovered('')}
-                  onClick={() => { setSelected(owned ? card.id : ''); setMultiSelected([]); setPinned(card.id); }}
+                  onClick={event => {
+                    if (event.shiftKey && owned && movable) {
+                      setMultiSelected(current => current.includes(card.id) ? current.filter(id => id !== card.id) : [...current, card.id]);
+                      setSelected('');
+                    } else {
+                      setSelected(owned ? card.id : '');
+                      setMultiSelected([]);
+                    }
+                    setPinned(card.id);
+                  }}
                   onContextMenu={event => openCardContext(event, card)}
+                  onPointerDown={event => {
+                    if (!owned || !movable || event.button !== 0) return;
+                    setSelected(card.id);
+                    setFieldDragId(card.id);
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                  }}
+                  onPointerMove={event => {
+                    if (!owned || !movable || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+                    const rect = boardRef.current?.getBoundingClientRect();
+                    if (!rect || !pointInRect({ x: event.clientX, y: event.clientY }, rect)) return;
+                    const point = toCanonicalPoint({
+                      x: ((event.clientX - rect.left - event.currentTarget.offsetWidth / 2) / rect.width) * 1000,
+                      y: ((event.clientY - rect.top - event.currentTarget.offsetHeight / 2) / rect.height) * 600,
+                    }, perspectiveViewer, room.settings.format);
+                    emitAction({ type: 'move', id: card.id, x: point.x, y: point.y });
+                  }}
+                  onPointerCancel={event => {
+                    setFieldDragId('');
+                    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+                  }}
+                  onPointerUp={event => {
+                    if (!owned || !movable || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+                    const handRect = handStripRef.current?.getBoundingClientRect();
+                    if (handRect && pointInRect({ x: event.clientX, y: event.clientY }, handRect)) {
+                      emitAction({ type: 'to-zone', id: card.id, zone: 'hand' });
+                    }
+                    setFieldDragId('');
+                    event.currentTarget.releasePointerCapture(event.pointerId);
+                  }}
                 >
                   <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span>
                   <span>{card.label ?? 'Hidden card'}</span>
-                  <small>{zone.label}</small>
+                  <small>{zone.group === 'battlefield' ? `Battlefield · ${zone.label}` : zone.label}</small>
                 </button>;
               });
             });

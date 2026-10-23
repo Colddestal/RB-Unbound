@@ -17,6 +17,8 @@ export type ModuleZoneDefinition = {
   behavior?: ModuleZoneBehavior;
   /** Module-defined semantic role such as "main-deck", "leader" or "objective". */
   role?: string;
+  /** Logical interaction group. Zones in the same group can be treated as one broader play area. */
+  group?: string;
   /** Parent zone for visual/rules nesting, e.g. a facedown sub-zone inside a location. */
   parentZoneId?: string;
   /** Optional hard capacity hint. A slot must have capacity 1. */
@@ -99,6 +101,7 @@ export function isGameModule(value: unknown): value is GameModule {
     if (typeof zone.ownerScoped !== 'boolean') return false;
     if (zone.behavior !== undefined && !['pile', 'hand', 'slot', 'area', 'location', 'subzone'].includes(zone.behavior)) return false;
     if (zone.role !== undefined && !validId(zone.role)) return false;
+    if (zone.group !== undefined && !validId(zone.group)) return false;
     if (zone.parentZoneId !== undefined && !validId(zone.parentZoneId)) return false;
     if (zone.parentZoneId === zone.id) return false;
     if (zone.capacity !== undefined && (!Number.isInteger(zone.capacity) || zone.capacity < 1 || zone.capacity > 500)) return false;
@@ -286,6 +289,7 @@ export const frontierSkirmishModule: GameModule = {
       ownerScoped: false,
       behavior: 'area',
       role: 'combat-area',
+      group: 'battlefield',
       stackable: true,
       defaultPosition: { x: 500, y: 300 },
       size: { width: 780, height: 138 },
@@ -298,6 +302,8 @@ export const frontierSkirmishModule: GameModule = {
       ownerScoped: true,
       behavior: 'location',
       role: 'base',
+      group: 'battlefield',
+      stackable: true,
       seatPositions: {
         '1': { x: 500, y: 410 },
         '2': { x: 500, y: 190 },
@@ -312,6 +318,8 @@ export const frontierSkirmishModule: GameModule = {
       ownerScoped: true,
       behavior: 'area',
       role: 'runes',
+      group: 'runes',
+      stackable: true,
       seatPositions: {
         '1': { x: 500, y: 485 },
         '2': { x: 500, y: 115 },

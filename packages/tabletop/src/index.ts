@@ -163,6 +163,7 @@ export function applyAction(
   action: TableAction,
   allowedZones: readonly string[] = CORE_ZONES,
   stackableZones: readonly string[] = ['field'],
+  zoneGroups: ReadonlyMap<string, string> = new Map(),
 ): TableState {
   const zoneSet = new Set(allowedZones);
   const stackableSet = new Set(stackableZones);
@@ -199,7 +200,9 @@ export function applyAction(
 
   if (action.type === 'stack') {
     const target = state.cards.find(c => c.id === action.targetId);
-    if (!target || target.id === card.id || target.owner !== action.actor || !stackableSet.has(target.zone) || target.zone !== card.zone || !stackableSet.has(card.zone)) return state;
+    const cardGroup = zoneGroups.get(card.zone) ?? card.zone;
+    const targetGroup = target ? (zoneGroups.get(target.zone) ?? target.zone) : '';
+    if (!target || target.id === card.id || target.owner !== action.actor || !stackableSet.has(target.zone) || targetGroup !== cardGroup || !stackableSet.has(card.zone)) return state;
     let cursor: Card | undefined = target;
     const seen = new Set<string>();
     while (cursor?.stackOn) {
