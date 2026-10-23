@@ -147,6 +147,8 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       zoneGroupFor(card.zone) === zoneGroupFor(selectedCard.zone))
     : [];
   const contextCard = cardContext ? table.cards.find(card => card.id === cardContext.cardId) : undefined;
+  const draggedCard = fieldDragId ? table.cards.find(card => card.id === fieldDragId) : undefined;
+  const draggedGroup = draggedCard ? zoneGroupFor(draggedCard.zone) : undefined;
   const handZoneId = activeModule.zones.find(zone => zone.kind === 'hand')?.id;
   const discardZoneId = activeModule.zones.find(zone => zone.kind === 'discard')?.id;
   const deckZoneId = activeModule.zones.find(zone => zone.kind === 'deck')?.id;
@@ -513,7 +515,8 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
           execute({ type: 'to-zone', id: card.id, zone: 'hand', actor: viewer });
           addLocalHistory(`Player ${viewer} returned a card to their hand.`);
         } else if (mode === 'field' && rect && pointInRect({ x: event.clientX, y: event.clientY }, rect)) {
-          const targetZone = spatialLayerForCard(card, dropCursorPoint(event.clientX, event.clientY, rect));
+          const targetZone = spatialLayerForCard(card, dropCursorPoint(event.clientX, event.clientY, rect)) ??
+            (zoneGroupFor(card.zone) === 'battlefield' && card.zone !== 'field' ? 'field' : undefined);
           if (targetZone && targetZone !== card.zone) {
             execute({ type: 'to-zone', id: card.id, zone: targetZone, actor: viewer });
             addLocalHistory(`Player ${viewer} moved a card into ${zoneLabel(targetZone)}.`);
@@ -860,7 +863,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
               : table.cards.filter(card => card.zone === zone.id).length;
             return [<div
               key={`${zone.id}-${player ?? 'shared'}`}
-              className={`module-zone-area module-zone-${zone.kind} module-zone-behavior-${zone.behavior ?? 'legacy'} module-zone-role-${zone.role ?? 'none'}`}
+              className={`module-zone-area module-zone-${zone.kind} module-zone-behavior-${zone.behavior ?? 'legacy'} module-zone-role-${zone.role ?? 'none'} ${draggedGroup === 'battlefield' && zone.group === 'battlefield' ? 'spatial-drop-target' : ''}`}
               style={{
                 left: `${position.x / 10}%`,
                 top: `${position.y / 6}%`,
