@@ -106,6 +106,13 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
   const movableZoneSet = new Set(stackableZones);
   const zoneGroups = new Map(activeModule.zones.map(zone => [zone.id, zone.group ?? zone.id] as const));
   const zoneGroupFor = (zoneId: string) => zoneGroups.get(zoneId) ?? zoneId;
+  const canonicalCardPoint = (card: Card) => {
+    const zone = activeModule.zones.find(item => item.id === card.zone);
+    if (zone?.stackable && card.x === 0 && card.y === 0) {
+      return canonicalZonePosition(zone, card.owner) ?? { x: card.x, y: card.y };
+    }
+    return { x: card.x, y: card.y };
+  };
   const execute = (action: Parameters<typeof applyAction>[1]) =>
     setTable(state => applyAction(state, action, allowedZones, stackableZones, zoneGroups));
   const selectedCard = table.cards.find(card => card.id === selected);
@@ -336,7 +343,9 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
         const dx = action === 'moveLeft' ? -step : action === 'moveRight' ? step : 0;
         const dy = action === 'moveUp' ? -step : action === 'moveDown' ? step : 0;
         for (const card of targets) {
-          if (card.owner === viewer) execute({ type: 'move', id: card.id, actor: viewer, x: card.x + dx, y: card.y + dy });
+          if (card.owner !== viewer) continue;
+          const point = canonicalCardPoint(card);
+          execute({ type: 'move', id: card.id, actor: viewer, x: point.x + dx, y: point.y + dy });
         }
       } else return;
 
@@ -761,7 +770,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
           const ids = table.cards
             .filter(card => card.owner === viewer && movableZoneSet.has(card.zone))
             .filter(card => {
-              const point = toViewerPoint({ x: card.x, y: card.y }, viewer, '1v1');
+              const point = toViewerPoint(canonicalCardPoint(card), viewer, '1v1');
               const cx = (point.x / 1000) * rect.width + cardHalfWidth;
               const cy = (point.y / 600) * rect.height + cardHalfHeight;
               return cx >= left && cx <= right && cy >= top && cy <= bottom;
