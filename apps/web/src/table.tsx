@@ -7,6 +7,7 @@ import { CardContextMenu, type CardContextState } from './card-context-menu';
 import { localHandDropRect, pointInRect } from './drag-drop';
 import { toCanonicalPoint, toViewerPoint, toViewerSeat } from './board-perspective';
 import { actionForCode, displayKey, type KeyBindings } from './controls';
+import { automaticZoneCardPoint } from './zone-card-layout';
 import {
   applyAction,
   canManipulate,
@@ -109,7 +110,13 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
   const canonicalCardPoint = (card: Card) => {
     const zone = activeModule.zones.find(item => item.id === card.zone);
     if (zone?.stackable && card.x === 0 && card.y === 0) {
-      return canonicalZonePosition(zone, card.owner) ?? { x: card.x, y: card.y };
+      const zoneCards = table.cards
+        .filter(item => item.owner === card.owner && item.zone === card.zone)
+        .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+      const index = Math.max(0, zoneCards.findIndex(item => item.id === card.id));
+      return automaticZoneCardPoint(zone, card.owner, index, zoneCards.length) ??
+        canonicalZonePosition(zone, card.owner) ??
+        { x: card.x, y: card.y };
     }
     return { x: card.x, y: card.y };
   };
@@ -578,19 +585,26 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       {hand.map((card, index) => renderCard(card, index, hand, 'hand'))}
       {field.map((card, index) => renderCard(card, index, field, 'field'))}
       {activeModule.zones.filter(zone => zone.kind === 'custom' && zoneBehavior(zone) !== 'pile').flatMap(zone => {
-        const cards = table.cards.filter(card => card.owner === player && card.zone === zone.id);
+        const cards = table.cards
+          .filter(card => card.owner === player && card.zone === zone.id)
+          .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
         return cards.flatMap((card, index) => {
           const rawPositions = !zone.ownerScoped && zone.displayCopies?.length
             ? zone.displayCopies
             : [zoneAreaPosition(zone, player) ?? { x: 500, y: 300 }];
           return rawPositions.map((rawPosition, copyIndex) => {
             const hasFreePosition = Boolean(zone.stackable && (card.x !== 0 || card.y !== 0));
+            const automaticPoint = !hasFreePosition && zone.stackable
+              ? automaticZoneCardPoint(zone, card.owner, index, cards.length)
+              : undefined;
             const position = hasFreePosition
               ? toViewerPoint({ x: card.x, y: card.y }, viewer, '1v1')
-              : (!zone.ownerScoped && zone.displayCopies?.length
-                ? toViewerPoint(rawPosition, viewer, '1v1')
-                : rawPosition);
-            const styleOffset = hasFreePosition ? 0 : index * 7;
+              : automaticPoint
+                ? toViewerPoint(automaticPoint, viewer, '1v1')
+                : (!zone.ownerScoped && zone.displayCopies?.length
+                  ? toViewerPoint(rawPosition, viewer, '1v1')
+                  : rawPosition);
+            const styleOffset = hasFreePosition || automaticPoint ? 0 : index * 7;
             const owned = card.owner === viewer;
             const movable = Boolean(zone.stackable);
             return <button
