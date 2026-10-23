@@ -8,6 +8,7 @@ import { pointInRect } from './drag-drop';
 import { toCanonicalPoint, toViewerPoint, toViewerSeat } from './board-perspective';
 import { actionForCode, displayKey, type KeyBindings } from './controls';
 import { automaticZoneCardPoint } from './zone-card-layout';
+import { spatialDropZone } from './spatial-zone-drop';
 import {
   builtInModulePackages,
   defaultGameModule,
@@ -219,6 +220,16 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
     }
     return { x: card.x, y: card.y };
   };
+  const dropCursorPoint = (clientX: number, clientY: number, rect: DOMRect) =>
+    toCanonicalPoint({
+      x: ((clientX - rect.left) / rect.width) * 1000,
+      y: ((clientY - rect.top) / rect.height) * 600,
+    }, perspectiveViewer, room?.settings.format ?? '1v1');
+  const spatialLayerForCard = (card: PublicCard, point: { x: number; y: number }) => {
+    const sourceGroup = card.zone === 'hand' ? 'battlefield' : zoneGroupFor(card.zone);
+    if (sourceGroup !== 'battlefield') return undefined;
+    return spatialDropZone(activeModule, point, card.owner, sourceGroup);
+  };
   const selectedCard = match?.table.cards.find(card => card.id === selected);
   const selectedCards = match?.table.cards.filter(card => multiSelected.includes(card.id)) ?? [];
   const inspectorCard = match?.table.cards.find(card => card.id === (hovered || pinned));
@@ -416,8 +427,12 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
       onPointerUp={event => {
         if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
         const handRect = handStripRef.current?.getBoundingClientRect();
+        const boardRect = boardRef.current?.getBoundingClientRect();
         if (owned && handRect && pointInRect({ x: event.clientX, y: event.clientY }, handRect)) {
           emitAction({ type: 'to-zone', id: card.id, zone: 'hand' });
+        } else if (owned && boardRect && pointInRect({ x: event.clientX, y: event.clientY }, boardRect)) {
+          const targetZone = spatialLayerForCard(card, dropCursorPoint(event.clientX, event.clientY, boardRect));
+          if (targetZone && targetZone !== card.zone) emitAction({ type: 'to-zone', id: card.id, zone: targetZone });
         }
         setFieldDragId('');
         event.currentTarget.releasePointerCapture(event.pointerId);
@@ -805,8 +820,12 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
                   onPointerUp={event => {
                     if (!owned || !movable || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
                     const handRect = handStripRef.current?.getBoundingClientRect();
+                    const boardRect = boardRef.current?.getBoundingClientRect();
                     if (handRect && pointInRect({ x: event.clientX, y: event.clientY }, handRect)) {
                       emitAction({ type: 'to-zone', id: card.id, zone: 'hand' });
+                    } else if (boardRect && pointInRect({ x: event.clientX, y: event.clientY }, boardRect)) {
+                      const targetZone = spatialLayerForCard(card, dropCursorPoint(event.clientX, event.clientY, boardRect));
+                      if (targetZone && targetZone !== card.zone) emitAction({ type: 'to-zone', id: card.id, zone: targetZone });
                     }
                     setFieldDragId('');
                     event.currentTarget.releasePointerCapture(event.pointerId);
@@ -866,7 +885,9 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
               if (rect && distance > 6 &&
                 event.clientX >= rect.left && event.clientX <= rect.right &&
                 event.clientY >= rect.top && event.clientY <= rect.bottom) {
-                emitAction({ type: 'to-zone', id: card.id, zone: 'field' });
+                const cursorPoint = dropCursorPoint(event.clientX, event.clientY, rect);
+                const targetZone = spatialLayerForCard(card, cursorPoint) ?? 'field';
+                emitAction({ type: 'to-zone', id: card.id, zone: targetZone });
                 const point = toCanonicalPoint({
                   x: ((event.clientX - rect.left - 43) / rect.width) * 1000,
                   y: ((event.clientY - rect.top - 58) / rect.height) * 600,
