@@ -409,3 +409,22 @@ Hand-to-board dragging uses the same hit test, so dropping directly onto Base no
 Zone transitions preserve explicit card coordinates when moving between movable layers such as Base and Combat Area. The visible drop point therefore remains stable when the logical zone changes. A card played from Hand into any `battlefield` group destination receives the same face-down play treatment as a card played to the normal field.
 
 Spatial snapping is presentation-driven input only; Multiplayer still sends ordinary server-authoritative `to-zone` and `move` actions and the server remains responsible for validating ownership and allowed zones.
+
+
+## Spatial battlefield layer snapping
+
+Visual placement and logical battlefield zones are now linked during drag-and-drop.
+
+Movable zones that share a logical `group` can act as spatial layers. For the Full Mat Prototype, Base and Combat Area both belong to `group: battlefield`.
+
+When a battlefield card is released:
+- dropping inside the owning player's Base changes the card's logical zone to `base`
+- dropping inside the shared Combat Area changes it to `field`
+- dragging a Base card out of Base falls back to `field`
+- Runes are not affected because they belong to the separate `runes` group
+
+Spatial resolution is geometry-driven from the module's declared zone centers and sizes. When overlapping layers match, the smaller layer wins, so Base takes priority over a larger Combat Area if their geometry overlaps.
+
+Changing between Base and Combat Area preserves the exact card coordinates from the drag. Right-click zone actions remain available, but normal play no longer requires them for Base placement.
+
+While a battlefield card is being dragged, battlefield spatial layers receive a subtle visual highlight to communicate valid snap regions.
