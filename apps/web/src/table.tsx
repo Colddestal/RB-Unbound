@@ -228,7 +228,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
     addLocalHistory(`Player ${player} shuffled ${activeModule.zones.find(item => item.id === zone)?.label ?? zone}.`);
   };
 
-  const loadDeckForPlayerOne = (deck: DeckDefinition) => {
+  const loadDeckForPlayer = (deck: DeckDefinition, player: 1 | 2) => {
     if (deck.moduleId !== activeModule.id || deck.moduleVersion !== activeModule.version) {
       setError('That deck does not match the active module.');
       return;
@@ -238,10 +238,10 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       const definition = catalog.get(definitionId);
       if (!definition) return null;
       return {
-        id: `p1-${definitionId}-${index + 1}`,
+        id: `p${player}-deck-${crypto.randomUUID()}`,
         definitionId,
         label: definition.name,
-        owner: 1 as PlayerId,
+        owner: player as PlayerId,
         zone: 'deck',
         order: index,
         x: 0,
@@ -253,13 +253,13 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
 
     setTable(state => ({
       ...state,
-      cards: [...state.cards.filter(card => card.owner !== 1), ...cards],
+      cards: [...state.cards.filter(card => card.owner !== player || card.zone !== 'deck'), ...cards],
     }));
     setSelected('');
     setMultiSelected([]);
     setPinned('');
     setError('');
-    addLocalHistory(`Loaded ${deck.name} for Player 1.`);
+    addLocalHistory(`Loaded ${deck.name} for Player ${player}.`);
   };
 
   const targets = selectedCards.length ? selectedCards : (selectedCard ? [selectedCard] : []);
@@ -910,7 +910,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       onClose={() => setCardContext(null)}
     />}
 
-    <DeckTools module={activeModule} catalog={activePackage.cards} onLoadDeck={loadDeckForPlayerOne} />
+    <DeckTools key={modulePackageKey(activeModule)} module={activeModule} catalog={activePackage.cards} onLoadDeck={loadDeckForPlayer} />
 
     <footer>
       {activeModule.description} · Draw from your {zoneLabel('deck').toLowerCase()} · Double-click a {zoneLabel('hand').toLowerCase()} card to play it · Drag your {zoneLabel('field').toLowerCase()} cards.
