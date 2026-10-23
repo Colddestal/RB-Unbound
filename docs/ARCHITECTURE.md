@@ -358,3 +358,23 @@ Module pile definitions may optionally seed placeholder cards for development/te
 Hidden secondary piles can expose count-only summaries with `countPublic`. Multiplayer clients receive only the count for those piles, not card identities or ordering. Drawing from the Rune Deck is server-authoritative and moves the top placeholder Rune face-up into the public Runes row.
 
 No official card art or proprietary card data is bundled by this prototype.
+
+
+## Format-aware seats, spectator capacity, and movable mat zones
+
+Player seats and spectators are separate concepts.
+
+- 1v1 requires Seats 1–2.
+- 2v2 and FFA4 require Seats 1–4.
+- Spectators never occupy player seats and never participate in readiness or start requirements.
+- The host controls spectator capacity from 0 to 4. Empty spectator slots are optional and never block match start.
+- The server rejects spectator joins when the configured capacity is full and prevents lowering the cap below current spectator occupancy.
+
+Tabletop zones can also declare a logical `group`. This lets visually distinct areas participate in the same broader play space without collapsing their labels or geometry into one zone.
+
+The Full Mat Prototype uses:
+- Combat Area: `group: battlefield`
+- Base: `group: battlefield`
+- Runes: `group: runes`
+
+Base and Runes are movable card zones. Cards in those zones use the same authoritative `move` action, pointer dragging, box selection, keyboard nudging, tap/flip controls and right-click actions as ordinary field cards. A card in Base remains visually in Base while being semantically part of the broader battlefield interaction group. Cross-zone stacking is permitted only when both zones are movable and share the same logical group.
