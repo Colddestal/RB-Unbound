@@ -486,6 +486,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   }
 
   const fieldCards = match?.table.cards.filter(card => card.zone === 'field') ?? [];
+  const movableCards = match?.table.cards.filter(card => movableZoneSet.has(card.zone)) ?? [];
   const ownHand = match?.table.cards.filter(card => card.zone === 'hand' && card.owner === identity?.seat) ?? [];
   const teammateHands = match?.table.cards.filter(card => card.zone === 'hand' && card.owner !== identity?.seat) ?? [];
   const discards = match?.table.cards.filter(card => card.zone === 'discard') ?? [];
@@ -616,11 +617,11 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           <button disabled={!canControlSelected} onClick={() => { const targets = selectedCards.length ? selectedCards : (selectedCard ? [selectedCard] : []); for (const card of targets) emitAction({ type: 'flip', id: card.id }); }}>Flip</button>
           <button disabled={!canControlSelected} onClick={() => { const targets = selectedCards.length ? selectedCards : (selectedCard ? [selectedCard] : []); for (const card of targets) emitAction({ type: 'to-zone', id: card.id, zone: 'hand' }); }}>To hand</button>
           <button disabled={!canControlSelected} onClick={() => { const targets = selectedCards.length ? selectedCards : (selectedCard ? [selectedCard] : []); for (const card of targets) emitAction({ type: 'to-zone', id: card.id, zone: 'discard' }); }}>Discard</button>
-          <select disabled={!canControlSelected || selectedCard?.zone !== 'field'} onChange={e => {
+          <select disabled={!canControlSelected || !selectedCard || !movableZoneSet.has(selectedCard.zone)} onChange={e => {
             if (selectedCard && e.target.value) emitAction({ type: 'stack', id: selectedCard.id, targetId: e.target.value });
             e.currentTarget.value = '';
           }} defaultValue="">
-            <option value="">Stack on…</option>{ownFieldCards.map(card => <option value={card.id} key={card.id}>{card.label ?? 'Card'}</option>)}
+            <option value="">Stack on…</option>{ownStackCards.map(card => <option value={card.id} key={card.id}>{card.label ?? 'Card'}</option>)}
           </select>
           <button disabled={!selectedCard?.stackOn || !canControlSelected} onClick={() => selectedCard && emitAction({ type: 'unstack', id: selectedCard.id })}>Unstack</button>
         </section>}
@@ -653,10 +654,10 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
             const renderedCard = event.currentTarget.querySelector<HTMLElement>('.card');
             const cardHalfWidth = (renderedCard?.offsetWidth ?? 64) / 2;
             const cardHalfHeight = (renderedCard?.offsetHeight ?? 88) / 2;
-            const ids = fieldCards
+            const ids = movableCards
               .filter(card => card.owner === identity.seat)
               .filter(card => {
-                const point = toViewerPoint({ x: card.x, y: card.y }, perspectiveViewer, room.settings.format);
+                const point = toViewerPoint(canonicalCardPoint(card), perspectiveViewer, room.settings.format);
                 const cx = (point.x / 1000) * rect.width + cardHalfWidth;
                 const cy = (point.y / 600) * rect.height + cardHalfHeight;
                 return cx >= left && cx <= right && cy >= top && cy <= bottom;
