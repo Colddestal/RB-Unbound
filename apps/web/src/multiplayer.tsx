@@ -192,15 +192,38 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
       ? toViewerPoint(zone.defaultPosition, perspectiveViewer, room?.settings.format ?? '1v1')
       : undefined;
   };
+  const canonicalZonePosition = (zone: ModuleZoneDefinition, player?: PlayerId) => {
+    if (zone.ownerScoped && player) {
+      const seatKey = String(player) as '1' | '2' | '3' | '4';
+      return zone.seatPositions?.[seatKey] ?? zone.defaultPosition;
+    }
+    return zone.defaultPosition;
+  };
   const compatibleCreatePackages = modulePackages.filter(bundle => bundle.module.supportedFormats.includes(format));
   const ownSeat = identity?.seat ? room?.seats.find(seat => seat.seat === identity.seat) : undefined;
   const isOwner = Boolean(ownSeat?.owner);
+  const movableZoneSet = new Set(activeModule.zones.filter(zone => zone.stackable).map(zone => zone.id));
+  const zoneGroups = new Map(activeModule.zones.map(zone => [zone.id, zone.group ?? zone.id] as const));
+  const zoneGroupFor = (zoneId: string) => zoneGroups.get(zoneId) ?? zoneId;
+  const canonicalCardPoint = (card: PublicCard) => {
+    const zone = activeModule.zones.find(item => item.id === card.zone);
+    if (zone?.stackable && card.x === 0 && card.y === 0) {
+      return canonicalZonePosition(zone, card.owner) ?? { x: card.x, y: card.y };
+    }
+    return { x: card.x, y: card.y };
+  };
   const selectedCard = match?.table.cards.find(card => card.id === selected);
   const selectedCards = match?.table.cards.filter(card => multiSelected.includes(card.id)) ?? [];
   const inspectorCard = match?.table.cards.find(card => card.id === (hovered || pinned));
   const inspectorPinned = Boolean(pinned && !hovered);
   const canControlSelected = Boolean(identity?.seat && (selectedCards.length ? selectedCards.every(card => card.owner === identity.seat) : selectedCard?.owner === identity.seat));
-  const ownFieldCards = match?.table.cards.filter(card => card.zone === 'field' && card.owner === identity?.seat && card.id !== selected) ?? [];
+  const ownStackCards = selectedCard
+    ? match?.table.cards.filter(card =>
+      card.owner === identity?.seat &&
+      card.id !== selectedCard.id &&
+      movableZoneSet.has(card.zone) &&
+      zoneGroupFor(card.zone) === zoneGroupFor(selectedCard.zone)) ?? []
+    : [];
   const contextCard = cardContext ? match?.table.cards.find(card => card.id === cardContext.cardId) : undefined;
   const handZoneId = activeModule.zones.find(zone => zone.kind === 'hand')?.id;
   const discardZoneId = activeModule.zones.find(zone => zone.kind === 'discard')?.id;
@@ -235,6 +258,11 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   const moveContextCard = (zone: string) => {
     if (!contextCard || !canActOnContextCard) return;
     emitAction({ type: 'to-zone', id: contextCard.id, zone });
+    const targetZone = activeModule.zones.find(item => item.id === zone);
+    const position = targetZone?.kind === 'custom' && targetZone.stackable
+      ? canonicalZonePosition(targetZone, contextCard.owner)
+      : undefined;
+    if (position) emitAction({ type: 'move', id: contextCard.id, x: position.x, y: position.y });
   };
 
   const rotateContextCard = () => {
@@ -279,11 +307,14 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
       else if (action === 'discard') for (const card of targets) emitAction({ type: 'to-zone', id: card.id, zone: 'discard' });
       else if (action === 'moveHand') for (const card of targets) emitAction({ type: 'to-zone', id: card.id, zone: 'hand' });
       else if (action === 'playField') for (const card of targets) emitAction({ type: 'to-zone', id: card.id, zone: 'field' });
-      else if (targets.every(card => card.zone === 'field') && ['moveUp', 'moveDown', 'moveLeft', 'moveRight'].includes(action)) {
+      else if (targets.every(card => movableZoneSet.has(card.zone)) && ['moveUp', 'moveDown', 'moveLeft', 'moveRight'].includes(action)) {
         const step = event.shiftKey ? 50 : 15;
         const dx = action === 'moveLeft' ? -step : action === 'moveRight' ? step : 0;
         const dy = action === 'moveUp' ? -step : action === 'moveDown' ? step : 0;
-        for (const card of targets) emitAction({ type: 'move', id: card.id, x: card.x + dx, y: card.y + dy });
+        for (const card of targets) {
+          const point = canonicalCardPoint(card);
+          emitAction({ type: 'move', id: card.id, x: point.x + dx, y: point.y + dy });
+        }
       } else return;
 
       event.preventDefault();
