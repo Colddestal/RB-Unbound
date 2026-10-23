@@ -27,7 +27,9 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL shown in the terminal. Local play supports manual card movement, turns, and JSON table export/import. The browser demo hosts local play, while multiplayer requires a running development server.
+Open the Vite URL shown in the terminal. Local play supports manual card movement, turns, and JSON table export/import. The Deck Editor below the table lets you name a deck, add/remove cards from the selected module's catalog, save separate local drafts for Players 1 and 2, import/export deck JSON, and load a deck into either player's Main Deck. Drafts are saved in that browser; export a copy before clearing browser data. The browser demo hosts local play, while multiplayer requires a running development server.
+
+The built-in catalog still contains original placeholder cards. Official Riftbound cards and art require Riot-approved app-specific API access; the generic editor is ready for an authorized catalog but does not ship one.
 
 To run the multiplayer development server in another terminal:
 

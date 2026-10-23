@@ -143,11 +143,22 @@ button:focus-visible,select:focus-visible,input:focus-visible,.card:focus-visibl
 .deck-tools{margin-top:12px}
 .deck-tools-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .deck-tools-heading h2{margin:4px 0 0}
+.deck-editor-settings{display:grid;grid-template-columns:minmax(140px,220px) minmax(0,1fr);gap:12px}
+.deck-editor-settings select{width:100%;padding:9px;background:#0c1725;color:#edf3fc;border:1px solid #3a5069;border-radius:8px}
+.deck-editor-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,.75fr);gap:18px}
+.deck-editor-grid>div{min-width:0}
+.deck-editor-grid h3{font-size:14px;margin:12px 0 10px;color:#dce8f3}
 .catalog-results{display:grid;gap:6px;max-height:240px;overflow:auto;margin:10px 0;padding-right:4px}
-.catalog-row{display:grid;grid-template-columns:150px 1fr 130px;gap:10px;align-items:center;padding:8px 10px;border:1px solid #293d54;border-radius:8px;background:#0b1724;font-size:11px}
+.catalog-row{display:grid;grid-template-columns:minmax(110px,150px) minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 10px;border:1px solid #293d54;border-radius:8px;background:#0b1724;font-size:11px}
+.catalog-row>div{display:grid;gap:4px;min-width:0}
 .catalog-row span{color:#93a9bc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.catalog-row small{color:#687f94;text-align:right;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
-@media(max-width:800px){.catalog-row{grid-template-columns:1fr}.catalog-row small{text-align:left}}
+.catalog-row small{color:#687f94;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;overflow:hidden;text-overflow:ellipsis}
+.deck-editor-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 9px;border:1px solid #293d54;border-radius:8px;background:#0b1724;font-size:12px}
+.deck-editor-row>span{min-width:0;overflow-wrap:anywhere}
+.deck-editor-quantity{display:flex;align-items:center;gap:9px;flex-shrink:0}
+.deck-editor-quantity button{min-width:31px;padding:4px 7px}
+@media(max-width:800px){.deck-editor-grid{grid-template-columns:1fr}.catalog-row{grid-template-columns:minmax(100px,150px) minmax(0,1fr) auto}}
+@media(max-width:520px){.deck-editor-settings{grid-template-columns:1fr}.catalog-row{grid-template-columns:1fr auto}.catalog-row span{grid-column:1/-1;grid-row:2}}
 
 .inspector-metadata{margin-top:14px;padding-top:12px;border-top:1px solid #32465a}
 .inspector-metadata .eyebrow{display:block;margin-bottom:8px}
