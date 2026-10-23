@@ -36,6 +36,7 @@ export type RoomSettings = {
   ruleset: RulesetPreset;
   isPublic: boolean;
   allowSpectators: boolean;
+  spectatorLimit: number;
   readyCheck: boolean;
   shareTeamHands: boolean;
   bestOf: SeriesBestOf;
@@ -92,6 +93,14 @@ const teamFor = (format: MatchFormat, seat: SeatNumber): TeamNumber => {
 export const requiredSeats = (format: MatchFormat): SeatNumber[] =>
   format === '1v1' ? [1, 2] : [1, 2, 3, 4];
 
+export const playerSeatCount = (format: MatchFormat): 2 | 4 =>
+  format === '1v1' ? 2 : 4;
+
+export const normalizeSpectatorLimit = (value: unknown, fallback = 4): number => {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return fallback;
+  return Math.max(0, Math.min(4, value));
+};
+
 export function createRoom(code: string, ownerMemberId: string, ownerName: string, settings?: Partial<RoomSettings>): RoomState {
   const format = settings?.format ?? '1v1';
   const defaults: RoomSettings = {
@@ -102,6 +111,7 @@ export function createRoom(code: string, ownerMemberId: string, ownerName: strin
     ruleset: 'standard',
     isPublic: false,
     allowSpectators: true,
+    spectatorLimit: 4,
     readyCheck: true,
     shareTeamHands: false,
     bestOf: 1,
@@ -114,7 +124,9 @@ export function createRoom(code: string, ownerMemberId: string, ownerName: strin
     ...settings,
     format,
     bestOf,
+    spectatorLimit: normalizeSpectatorLimit(settings?.spectatorLimit, defaults.spectatorLimit),
   };
+  if (merged.spectatorLimit === 0) merged.allowSpectators = false;
   const seats: Seat[] = ([1, 2, 3, 4] as SeatNumber[]).map(seat => ({
     seat,
     team: teamFor(format, seat),
@@ -130,10 +142,14 @@ export function setRoomSettings(room: RoomState, actor: string, patch: Partial<R
   const allowedSeats = requiredSeats(format);
   if (room.seats.some(seat => seat.memberId && !allowedSeats.includes(seat.seat))) return room;
 
+  const spectatorLimit = normalizeSpectatorLimit(patch.spectatorLimit, room.settings.spectatorLimit);
+  if (room.spectators.length > spectatorLimit) return room;
   const settings = {
     ...room.settings,
     ...patch,
     format,
+    spectatorLimit,
+    allowSpectators: spectatorLimit > 0 && (patch.allowSpectators ?? room.settings.allowSpectators),
     shareTeamHands: format === '2v2' ? (patch.shareTeamHands ?? room.settings.shareTeamHands) : false,
   };
   return {
@@ -175,7 +191,8 @@ export function setReady(room: RoomState, memberId: string, ready: boolean): Roo
 }
 
 export function addSpectator(room: RoomState, memberId: string, displayName: string): RoomState {
-  if (!room.settings.allowSpectators || room.status === 'closed') return room;
+  if (!room.settings.allowSpectators || room.settings.spectatorLimit < 1 || room.status === 'closed') return room;
+  if (room.spectators.length >= room.settings.spectatorLimit) return room;
   if (room.seats.some(seat => seat.memberId === memberId) || room.spectators.some(s => s.memberId === memberId)) return room;
   return { ...room, spectators: [...room.spectators, { memberId, displayName }] };
 }
