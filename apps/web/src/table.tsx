@@ -575,13 +575,18 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
             ? zone.displayCopies
             : [zoneAreaPosition(zone, player) ?? { x: 500, y: 300 }];
           return rawPositions.map((rawPosition, copyIndex) => {
-            const position = !zone.ownerScoped && zone.displayCopies?.length
-              ? toViewerPoint(rawPosition, viewer, '1v1')
-              : rawPosition;
-            const styleOffset = index * 7;
+            const hasFreePosition = Boolean(zone.stackable && (card.x !== 0 || card.y !== 0));
+            const position = hasFreePosition
+              ? toViewerPoint({ x: card.x, y: card.y }, viewer, '1v1')
+              : (!zone.ownerScoped && zone.displayCopies?.length
+                ? toViewerPoint(rawPosition, viewer, '1v1')
+                : rawPosition);
+            const styleOffset = hasFreePosition ? 0 : index * 7;
+            const owned = card.owner === viewer;
+            const movable = Boolean(zone.stackable);
             return <button
               key={`${card.id}-${copyIndex}`}
-              className={`card custom-zone-card ${zone.displayCopies?.length ? 'shared-card-copy' : ''} ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${card.faceUp ? '' : `back back-${cardBack.pattern}`}`}
+              className={`card custom-zone-card ${movable ? 'movable-zone-card' : ''} ${zone.displayCopies?.length ? 'shared-card-copy' : ''} ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${card.faceUp ? '' : `back back-${cardBack.pattern}`}`}
               style={{
                 left: `calc(${position.x / 10}% + ${styleOffset}px)`,
                 top: `calc(${position.y / 6}% + ${styleOffset}px)`,
@@ -590,12 +595,51 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
               }}
               onMouseEnter={() => setHovered(card.id)}
               onMouseLeave={() => setHovered('')}
-              onClick={() => { setSelected(card.owner === viewer ? card.id : ''); setMultiSelected([]); setPinned(card.id); }}
+              onClick={event => {
+                if (event.shiftKey && owned && movable) {
+                  setMultiSelected(current => current.includes(card.id) ? current.filter(id => id !== card.id) : [...current, card.id]);
+                  setSelected('');
+                } else {
+                  setSelected(owned ? card.id : '');
+                  setMultiSelected([]);
+                }
+                setPinned(card.id);
+              }}
               onContextMenu={event => openCardContext(event, card)}
+              onPointerDown={event => {
+                if (!owned || !movable || event.button !== 0) return;
+                setSelected(card.id);
+                setFieldDragId(card.id);
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }}
+              onPointerMove={event => {
+                if (!owned || !movable || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+                const rect = boardRef.current?.getBoundingClientRect();
+                if (!rect || !pointInRect({ x: event.clientX, y: event.clientY }, rect)) return;
+                const point = toCanonicalPoint({
+                  x: ((event.clientX - rect.left - event.currentTarget.offsetWidth / 2) / rect.width) * 1000,
+                  y: ((event.clientY - rect.top - event.currentTarget.offsetHeight / 2) / rect.height) * 600,
+                }, viewer, '1v1');
+                execute({ type: 'move', id: card.id, actor: viewer, x: point.x, y: point.y });
+              }}
+              onPointerCancel={event => {
+                setFieldDragId('');
+                if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+              }}
+              onPointerUp={event => {
+                if (!owned || !movable || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+                const rect = boardRef.current?.getBoundingClientRect();
+                if (rect && pointInRect({ x: event.clientX, y: event.clientY }, localHandDropRect(rect))) {
+                  execute({ type: 'to-zone', id: card.id, zone: 'hand', actor: viewer });
+                  addLocalHistory(`Player ${viewer} returned a card to their hand.`);
+                }
+                setFieldDragId('');
+                event.currentTarget.releasePointerCapture(event.pointerId);
+              }}
             >
               <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span>
               <span>{card.faceUp ? card.label : 'Hidden card'}</span>
-              <small>{zone.label}</small>
+              <small>{zone.group === 'battlefield' ? `Battlefield · ${zone.label}` : zone.label}</small>
             </button>;
           });
         });
