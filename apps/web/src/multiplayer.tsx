@@ -7,6 +7,7 @@ import { CardContextMenu, type CardContextState } from './card-context-menu';
 import { pointInRect } from './drag-drop';
 import { toCanonicalPoint, toViewerPoint, toViewerSeat } from './board-perspective';
 import { actionForCode, displayKey, type KeyBindings } from './controls';
+import { automaticZoneCardPoint } from './zone-card-layout';
 import {
   builtInModulePackages,
   defaultGameModule,
@@ -208,7 +209,13 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   const canonicalCardPoint = (card: PublicCard) => {
     const zone = activeModule.zones.find(item => item.id === card.zone);
     if (zone?.stackable && card.x === 0 && card.y === 0) {
-      return canonicalZonePosition(zone, card.owner) ?? { x: card.x, y: card.y };
+      const zoneCards = match?.table.cards
+        .filter(item => item.owner === card.owner && item.zone === card.zone)
+        .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id)) ?? [];
+      const index = Math.max(0, zoneCards.findIndex(item => item.id === card.id));
+      return automaticZoneCardPoint(zone, card.owner, index, zoneCards.length) ??
+        canonicalZonePosition(zone, card.owner) ??
+        { x: card.x, y: card.y };
     }
     return { x: card.x, y: card.y };
   };
@@ -731,7 +738,10 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           }} />}
           {fieldCards.map(renderFieldCard)}
           {activeModule.zones.filter(zone => zone.kind === 'custom' && zoneBehavior(zone) !== 'pile').flatMap(zone => {
-            return match.table.cards.filter(card => card.zone === zone.id).flatMap((card, index) => {
+            return match.table.cards
+              .filter(card => card.zone === zone.id)
+              .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
+              .flatMap((card, index, cards) => {
               const rawPositions = !zone.ownerScoped && zone.displayCopies?.length
                 ? zone.displayCopies
                 : [zoneAreaPosition(zone, card.owner) ?? { x: 500, y: 300 }];
@@ -739,12 +749,17 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
               const movable = Boolean(zone.stackable);
               return rawPositions.map((rawPosition, copyIndex) => {
                 const hasFreePosition = movable && (card.x !== 0 || card.y !== 0);
+                const automaticPoint = !hasFreePosition && movable
+                  ? automaticZoneCardPoint(zone, card.owner, index, cards.length)
+                  : undefined;
                 const position = hasFreePosition
                   ? toViewerPoint({ x: card.x, y: card.y }, perspectiveViewer, room.settings.format)
-                  : (!zone.ownerScoped && zone.displayCopies?.length
-                    ? toViewerPoint(rawPosition, perspectiveViewer, room.settings.format)
-                    : rawPosition);
-                const styleOffset = hasFreePosition ? 0 : index * 7;
+                  : automaticPoint
+                    ? toViewerPoint(automaticPoint, perspectiveViewer, room.settings.format)
+                    : (!zone.ownerScoped && zone.displayCopies?.length
+                      ? toViewerPoint(rawPosition, perspectiveViewer, room.settings.format)
+                      : rawPosition);
+                const styleOffset = hasFreePosition || automaticPoint ? 0 : index * 7;
                 return <button
                   key={`${card.id}-${copyIndex}`}
                   className={`card custom-zone-card ${movable ? 'movable-zone-card' : ''} ${zone.displayCopies?.length ? 'shared-card-copy' : ''} ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${card.faceUp ? '' : `back back-${cardBack.pattern}`} ${owned ? '' : 'locked'}`}
