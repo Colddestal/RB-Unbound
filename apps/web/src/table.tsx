@@ -8,6 +8,7 @@ import { localHandDropRect, pointInRect } from './drag-drop';
 import { toCanonicalPoint, toViewerPoint, toViewerSeat } from './board-perspective';
 import { actionForCode, displayKey, type KeyBindings } from './controls';
 import { automaticZoneCardPoint } from './zone-card-layout';
+import { spatialDropZone } from './spatial-zone-drop';
 import {
   applyAction,
   canManipulate,
@@ -119,6 +120,16 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
         { x: card.x, y: card.y };
     }
     return { x: card.x, y: card.y };
+  };
+  const dropCursorPoint = (clientX: number, clientY: number, rect: DOMRect) =>
+    toCanonicalPoint({
+      x: ((clientX - rect.left) / rect.width) * 1000,
+      y: ((clientY - rect.top) / rect.height) * 600,
+    }, viewer, '1v1');
+  const spatialLayerForCard = (card: Card, point: { x: number; y: number }) => {
+    const sourceGroup = card.zone === 'hand' ? 'battlefield' : zoneGroupFor(card.zone);
+    if (sourceGroup !== 'battlefield') return undefined;
+    return spatialDropZone(activeModule, point, card.owner, sourceGroup);
   };
   const execute = (action: Parameters<typeof applyAction>[1]) =>
     setTable(state => applyAction(state, action, allowedZones, stackableZones, zoneGroups));
@@ -477,8 +488,10 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
           const drag = handDragRef.current;
           const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
           if (rect && distance > 6 && pointInRect({ x: event.clientX, y: event.clientY }, rect)) {
-            execute({ type: 'to-zone', id: card.id, zone: 'field', actor: viewer });
-            addLocalHistory(`Player ${viewer} played a card to ${zoneLabel('field')} face-down.`);
+            const cursorPoint = dropCursorPoint(event.clientX, event.clientY, rect);
+            const targetZone = spatialLayerForCard(card, cursorPoint) ?? 'field';
+            execute({ type: 'to-zone', id: card.id, zone: targetZone, actor: viewer });
+            addLocalHistory(`Player ${viewer} played a card to ${zoneLabel(targetZone)} face-down.`);
             const point = toCanonicalPoint({
               x: ((event.clientX - rect.left - 43) / rect.width) * 1000,
               y: ((event.clientY - rect.top - 58) / rect.height) * 600,
@@ -494,6 +507,12 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
         } else if (mode === 'field' && rect && pointInRect({ x: event.clientX, y: event.clientY }, localHandDropRect(rect))) {
           execute({ type: 'to-zone', id: card.id, zone: 'hand', actor: viewer });
           addLocalHistory(`Player ${viewer} returned a card to their hand.`);
+        } else if (mode === 'field' && rect && pointInRect({ x: event.clientX, y: event.clientY }, rect)) {
+          const targetZone = spatialLayerForCard(card, dropCursorPoint(event.clientX, event.clientY, rect));
+          if (targetZone && targetZone !== card.zone) {
+            execute({ type: 'to-zone', id: card.id, zone: targetZone, actor: viewer });
+            addLocalHistory(`Player ${viewer} moved a card into ${zoneLabel(targetZone)}.`);
+          }
         }
 
         handDragRef.current = null;
@@ -655,6 +674,12 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
                 if (rect && pointInRect({ x: event.clientX, y: event.clientY }, localHandDropRect(rect))) {
                   execute({ type: 'to-zone', id: card.id, zone: 'hand', actor: viewer });
                   addLocalHistory(`Player ${viewer} returned a card to their hand.`);
+                } else if (rect && pointInRect({ x: event.clientX, y: event.clientY }, rect)) {
+                  const targetZone = spatialLayerForCard(card, dropCursorPoint(event.clientX, event.clientY, rect));
+                  if (targetZone && targetZone !== card.zone) {
+                    execute({ type: 'to-zone', id: card.id, zone: targetZone, actor: viewer });
+                    addLocalHistory(`Player ${viewer} moved a card into ${zoneLabel(targetZone)}.`);
+                  }
                 }
                 setFieldDragId('');
                 event.currentTarget.releasePointerCapture(event.pointerId);

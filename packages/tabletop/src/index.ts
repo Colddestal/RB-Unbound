@@ -226,7 +226,10 @@ export function applyAction(
       if (action.type === 'unstack') return { ...current, stackOn: undefined, x: Math.min(1000, current.x + 35), y: Math.min(600, current.y + 35) };
       if (action.type === 'to-zone') {
         if (!zoneSet.has(action.zone)) return current;
-        const enteringField = action.zone === 'field';
+        const enteringField = action.zone === 'field' && !stackableSet.has(current.zone);
+        const destinationGroup = zoneGroups.get(action.zone) ?? action.zone;
+        const enteringBattlefieldFromHand = current.zone === 'hand' &&
+          (action.zone === 'field' || destinationGroup === 'battlefield');
         const defaults: Record<PlayerId, { x: number; y: number }> = {
           1: { x: 430, y: 360 },
           2: { x: 520, y: 125 },
@@ -241,7 +244,7 @@ export function applyAction(
             ? false
             : action.zone === 'hand'
               ? true
-              : (current.zone === 'hand' && action.zone === 'field' ? false : current.faceUp),
+              : (enteringBattlefieldFromHand ? false : current.faceUp),
           stackOn: undefined,
           x: enteringField ? defaults[current.owner].x : current.x,
           y: enteringField ? defaults[current.owner].y : current.y,
