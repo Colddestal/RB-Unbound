@@ -431,7 +431,8 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
         if (owned && handRect && pointInRect({ x: event.clientX, y: event.clientY }, handRect)) {
           emitAction({ type: 'to-zone', id: card.id, zone: 'hand' });
         } else if (owned && boardRect && pointInRect({ x: event.clientX, y: event.clientY }, boardRect)) {
-          const targetZone = spatialLayerForCard(card, dropCursorPoint(event.clientX, event.clientY, boardRect));
+          const targetZone = spatialLayerForCard(card, dropCursorPoint(event.clientX, event.clientY, boardRect)) ??
+            (zoneGroupFor(card.zone) === 'battlefield' && card.zone !== 'field' ? 'field' : undefined);
           if (targetZone && targetZone !== card.zone) emitAction({ type: 'to-zone', id: card.id, zone: targetZone });
         }
         setFieldDragId('');
@@ -824,7 +825,8 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
                     if (handRect && pointInRect({ x: event.clientX, y: event.clientY }, handRect)) {
                       emitAction({ type: 'to-zone', id: card.id, zone: 'hand' });
                     } else if (boardRect && pointInRect({ x: event.clientX, y: event.clientY }, boardRect)) {
-                      const targetZone = spatialLayerForCard(card, dropCursorPoint(event.clientX, event.clientY, boardRect));
+                      const targetZone = spatialLayerForCard(card, dropCursorPoint(event.clientX, event.clientY, boardRect)) ??
+                        (zoneGroupFor(card.zone) === 'battlefield' && card.zone !== 'field' ? 'field' : undefined);
                       if (targetZone && targetZone !== card.zone) emitAction({ type: 'to-zone', id: card.id, zone: targetZone });
                     }
                     setFieldDragId('');
