@@ -392,3 +392,20 @@ The Full Mat Prototype uses this for the Runes row. Newly drawn Runes:
 - keep automatic positions only until the player manually moves that card
 
 The authoritative table state still stores untouched drawn Runes at their neutral coordinates. Local and Multiplayer derive the same deterministic presentation position from zone geometry, card order and current zone count. Once a Rune is manually dragged, its explicit x/y coordinates override the automatic row layout.
+
+
+## Spatial battlefield layer snapping
+
+Movable battlefield cards now reconcile their logical zone with the visual layer where they are released.
+
+The client performs canonical board-space hit testing against module zone rectangles. For cards in the `battlefield` logical group:
+- releasing inside the owning player's Base changes the card zone to `base`
+- releasing inside the shared Combat Area changes the card zone to `field`
+- releasing outside a compatible battlefield layer leaves the current logical zone unchanged
+- unrelated groups such as Runes are excluded from battlefield snapping
+
+Hand-to-board dragging uses the same hit test, so dropping directly onto Base no longer requires the right-click Move to Base action.
+
+Zone transitions preserve explicit card coordinates when moving between movable layers such as Base and Combat Area. The visible drop point therefore remains stable when the logical zone changes. A card played from Hand into any `battlefield` group destination receives the same face-down play treatment as a card played to the normal field.
+
+Spatial snapping is presentation-driven input only; Multiplayer still sends ordinary server-authoritative `to-zone` and `move` actions and the server remains responsible for validating ownership and allowed zones.
