@@ -9,6 +9,7 @@ import { toCanonicalPoint, toViewerPoint, toViewerSeat } from './board-perspecti
 import { actionForCode, displayKey, type KeyBindings } from './controls';
 import { automaticZoneCardPoint } from './zone-card-layout';
 import { spatialDropZone } from './spatial-zone-drop';
+import { playTurnChime } from './turn-alert';
 import {
   builtInModulePackages,
   defaultGameModule,
@@ -74,7 +75,7 @@ type RoomSnapshot = {
 };
 
 type Identity = { code: string; seat?: PlayerId; spectator: boolean };
-type MatchSnapshot = { seat?: PlayerId; spectator: boolean; revision: number; table: TableView };
+type MatchSnapshot = { seat?: PlayerId; spectator: boolean; revision: number; turn: { seat: PlayerId; number: number }; table: TableView };
 
 const SERVER_URL = 'http://127.0.0.1:3001';
 
@@ -104,6 +105,10 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   const [dragPreview, setDragPreview] = useState<{ id: string; label: string; x: number; y: number } | null>(null);
   const [fieldDragId, setFieldDragId] = useState('');
   const [cardContext, setCardContext] = useState<CardContextState | null>(null);
+  const [confirmEndTurn, setConfirmEndTurn] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(() => window.localStorage.getItem('rb-unbound-turn-sound') !== 'off');
+  const soundEnabledRef = useRef(soundEnabled);
+  const lastTurnRef = useRef<number | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const handStripRef = useRef<HTMLElement | null>(null);
   const handDragRef = useRef<{ id: string; startX: number; startY: number } | null>(null);
@@ -138,19 +143,24 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
       }
     });
     client.on('session:invalid', () => {
+      lastTurnRef.current = null;
       window.sessionStorage.removeItem('rb-unbound-session');
       setRoom(null);
       setIdentity(null);
       setMatch(null);
     });
     client.on('session:cleared', () => {
+      lastTurnRef.current = null;
       window.sessionStorage.removeItem('rb-unbound-session');
       setRoom(null);
       setIdentity(null);
       setMatch(null);
       actionSequenceRef.current = 0;
     });
-    client.on('room:identity', (payload: Identity) => setIdentity(payload));
+    client.on('room:identity', (payload: Identity) => {
+      lastTurnRef.current = null;
+      setIdentity(payload);
+    });
     client.on('room:invite-code', (payload: { roomCode?: string; inviteCode?: string }) => {
       if (!payload.roomCode || !payload.inviteCode) return;
       setInviteCode(payload.inviteCode);
@@ -165,6 +175,9 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
     });
     client.on('room:started', () => client.emit('match:request-state'));
     client.on('match:update', (payload: MatchSnapshot) => {
+      if (lastTurnRef.current !== null && payload.turn.number > lastTurnRef.current &&
+          payload.seat === payload.turn.seat && soundEnabledRef.current) playTurnChime();
+      lastTurnRef.current = payload.turn.number;
       setMatch(payload);
       setSelected(current => payload.table.cards.some(card => card.id === current) ? current : '');
     });
@@ -177,6 +190,19 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
 
     return () => { client.disconnect(); };
   }, []);
+
+  useEffect(() => {
+    soundEnabledRef.current = soundEnabled;
+    window.localStorage.setItem('rb-unbound-turn-sound', soundEnabled ? 'on' : 'off');
+  }, [soundEnabled]);
+
+  useEffect(() => { setConfirmEndTurn(false); }, [match?.turn.number]);
+
+  useEffect(() => {
+    const originalTitle = document.title;
+    if (room?.status === 'active' && identity?.seat === match?.turn.seat) document.title = '● Your turn · RB Unbound';
+    return () => { document.title = originalTitle; };
+  }, [room?.status, identity?.seat, match?.turn.seat]);
 
   const activePackage = room?.modulePackage ?? builtInModulePackages[0];
   const activeModule = activePackage.module;
@@ -203,6 +229,8 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   };
   const compatibleCreatePackages = modulePackages.filter(bundle => bundle.module.supportedFormats.includes(format));
   const ownSeat = identity?.seat ? room?.seats.find(seat => seat.seat === identity.seat) : undefined;
+  const activeSeat = room?.seats.find(seat => seat.seat === match?.turn.seat);
+  const isMyTurn = Boolean(identity?.seat && identity.seat === match?.turn.seat && !identity.spectator);
   const isOwner = Boolean(ownSeat?.owner);
   const movableZoneSet = new Set(activeModule.zones.filter(zone => zone.stackable).map(zone => zone.id));
   const zoneGroups = new Map(activeModule.zones.map(zone => [zone.id, zone.group ?? zone.id] as const));
@@ -234,7 +262,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   const selectedCards = match?.table.cards.filter(card => multiSelected.includes(card.id)) ?? [];
   const inspectorCard = match?.table.cards.find(card => card.id === (hovered || pinned));
   const inspectorPinned = Boolean(pinned && !hovered);
-  const canControlSelected = Boolean(identity?.seat && (selectedCards.length ? selectedCards.every(card => card.owner === identity.seat) : selectedCard?.owner === identity.seat));
+  const canControlSelected = Boolean(isMyTurn && identity?.seat && (selectedCards.length ? selectedCards.every(card => card.owner === identity.seat) : selectedCard?.owner === identity.seat));
   const ownStackCards = selectedCard
     ? match?.table.cards.filter(card =>
       card.owner === identity?.seat &&
@@ -253,13 +281,14 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   const hiddenByOwner = useMemo(() => new Map(match?.table.hidden.map(summary => [summary.owner, summary]) ?? []), [match]);
 
   const emitAction = (action: ClientTableAction) => {
+    if (!connected || !isMyTurn) return;
     actionSequenceRef.current += 1;
     socket?.emit('match:action', { sequence: actionSequenceRef.current, action });
   };
 
   const openCardContext = (event: { preventDefault: () => void; clientX: number; clientY: number }, card: PublicCard) => {
     event.preventDefault();
-    const owned = identity?.seat === card.owner && !identity?.spectator;
+    const owned = isMyTurn && identity?.seat === card.owner;
     setSelected(owned ? card.id : '');
     setMultiSelected([]);
     setPinned(card.id);
@@ -268,7 +297,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
 
   const canActOnContextCard = Boolean(
     contextCard &&
-    identity?.seat &&
+    isMyTurn && identity?.seat &&
     !identity.spectator &&
     contextCard.owner === identity.seat,
   );
@@ -318,7 +347,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
       }
 
       const targets = selectedCards.length ? selectedCards : (selectedCard ? [selectedCard] : []);
-      if (!action || !identity?.seat || identity.spectator || targets.length === 0 || targets.some(card => card.owner !== identity.seat)) return;
+      if (!action || !isMyTurn || !identity?.seat || targets.length === 0 || targets.some(card => card.owner !== identity.seat)) return;
 
       if (action === 'rotate') for (const card of targets) emitAction({ type: 'rotate', id: card.id });
       else if (action === 'flip') for (const card of targets) emitAction({ type: 'flip', id: card.id });
@@ -340,7 +369,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedCard, selectedCards, identity?.seat, identity?.spectator, socket, bindings]);
+  }, [selectedCard, selectedCards, identity?.seat, isMyTurn, socket, bindings]);
 
   const create = () => {
     setError('');
@@ -373,7 +402,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   };
 
   const renderFieldCard = (card: PublicCard) => {
-    const owned = identity?.seat === card.owner;
+    const owned = isMyTurn && identity?.seat === card.owner;
     const point = toViewerPoint({ x: card.x, y: card.y }, perspectiveViewer, room?.settings.format ?? '1v1');
     const style: CSSProperties = {
       left: `${point.x / 10}%`,
@@ -589,6 +618,21 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
       <Chat room={room} value={chatText} setValue={setChatText} send={sendChat} />
     </div>}
 
+    {room.status === 'active' && match && <section className={`turn-banner ${isMyTurn ? 'turn-banner-active' : ''}`} role="status" aria-live="polite">
+      <div className="turn-ring" aria-hidden="true">{isMyTurn ? '●' : '○'}</div>
+      <div><strong>{isMyTurn ? 'Your turn' : `Seat ${match.turn.seat}${activeSeat?.displayName ? ` · ${activeSeat.displayName}` : ''}'s turn`}</strong>
+        <span>Turn {match.turn.number} · {identity?.spectator ? 'Spectating' : isMyTurn ? 'End your turn when you are ready.' : 'Waiting for the active player.'}</span></div>
+      {!identity?.spectator && (confirmEndTurn ? <div className="turn-actions">
+        <span>Lock in your end turn?</span>
+        <button className="primary" disabled={!connected || !isMyTurn} onClick={() => {
+          socket?.emit('match:end-turn', { expectedTurn: match.turn.number });
+          setConfirmEndTurn(false);
+        }}>Confirm end turn</button>
+        <button onClick={() => setConfirmEndTurn(false)}>Cancel</button>
+      </div> : <button className="primary" disabled={!connected || !isMyTurn} onClick={() => setConfirmEndTurn(true)}>End Turn</button>)}
+      <button className="sound-toggle" aria-label={soundEnabled ? 'Mute turn sound' : 'Enable turn sound'} aria-pressed={soundEnabled} onClick={() => setSoundEnabled(value => !value)}>{soundEnabled ? 'Sound on' : 'Sound off'}</button>
+    </section>}
+
     {room.status === 'active' && match && <div className="match-layout">
       <ResizableDockColumn>
         <div className="left-stack">
@@ -652,7 +696,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           className="board multiplayer-board"
           ref={boardRef}
           onPointerDown={event => {
-            if (event.button !== 0 || event.currentTarget !== event.target || identity?.spectator) return;
+            if (event.button !== 0 || event.currentTarget !== event.target || !isMyTurn) return;
             const rect = event.currentTarget.getBoundingClientRect();
             const x = event.clientX - rect.left;
             const y = event.clientY - rect.top;
@@ -699,7 +743,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
                 if (!position || !zone.size) return [];
                 const summary = hiddenByOwner.get(player);
                 const count = summary?.zoneCounts?.[zone.id] ?? (zone.id === 'deck' ? summary?.deckCount ?? 0 : 0);
-                const interactive = !identity?.spectator && identity?.seat === player;
+                const interactive = isMyTurn && identity?.seat === player;
                 return [<DeckPile
                   key={`${zone.id}-pile-${player}`}
                   label={zone.label}
@@ -760,7 +804,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
               const rawPositions = !zone.ownerScoped && zone.displayCopies?.length
                 ? zone.displayCopies
                 : [zoneAreaPosition(zone, card.owner) ?? { x: 500, y: 300 }];
-              const owned = identity?.seat === card.owner && !identity?.spectator;
+              const owned = isMyTurn && identity?.seat === card.owner;
               const movable = Boolean(zone.stackable);
               return rawPositions.map((rawPosition, copyIndex) => {
                 const hasFreePosition = movable && (card.x !== 0 || card.y !== 0);
@@ -845,7 +889,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
               left: `calc(${(position?.x ?? 900) / 10}% + ${index * 2}px)`,
               top: `calc(${(position?.y ?? 80) / 6}% + ${index * 2}px)`,
               transform: `translate(-50%,-50%) rotate(${card.rotation}deg)`,
-            }} onMouseEnter={() => setHovered(card.id)} onMouseLeave={() => setHovered('')} onClick={() => { setSelected(identity?.seat === card.owner ? card.id : ''); setPinned(card.id); }} onContextMenu={event => openCardContext(event, card)}>
+            }} onMouseEnter={() => setHovered(card.id)} onMouseLeave={() => setHovered('')} onClick={() => { setSelected(isMyTurn && identity?.seat === card.owner ? card.id : ''); setPinned(card.id); }} onContextMenu={event => openCardContext(event, card)}>
             <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span><span>{card.label ?? 'Hidden card'}</span><small>P{card.owner} · {zoneLabel('discard')}</small>
           </button>;
           })}
@@ -855,14 +899,14 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           <strong>Your hand</strong>
           <div className="hand-cards">{ownHand.map(card => <button
             key={card.id}
-            className={`mini-card ${selected === card.id ? 'selected' : ''} ${dragPreview?.id === card.id ? 'drag-source' : ''}`}
+            className={`mini-card ${!isMyTurn ? 'locked' : ''} ${selected === card.id ? 'selected' : ''} ${dragPreview?.id === card.id ? 'drag-source' : ''}`}
             onMouseEnter={() => setHovered(card.id)}
             onMouseLeave={() => setHovered('')}
             onClick={() => { setSelected(card.id); setPinned(card.id); }}
             onContextMenu={event => openCardContext(event, card)}
             onDoubleClick={() => emitAction({ type: 'to-zone', id: card.id, zone: 'field' })}
             onPointerDown={event => {
-              if (event.button !== 0) return;
+              if (event.button !== 0 || !isMyTurn) return;
               handDragRef.current = { id: card.id, startX: event.clientX, startY: event.clientY };
               setDragPreview({ id: card.id, label: card.label ?? 'Card', x: event.clientX, y: event.clientY });
               event.currentTarget.setPointerCapture(event.pointerId);

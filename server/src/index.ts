@@ -5,6 +5,8 @@ import {
   addSpectator,
   appendChat,
   appendHistory,
+  endTurn,
+  initialTurn,
   createRoom,
   leaveRoom,
   occupySeat,
@@ -18,6 +20,7 @@ import {
   type RoomState,
   type SeriesBestOf,
   type SeatNumber,
+  type TurnState,
 } from '@rb-unbound/lobby';
 import {
   applyAction,
@@ -61,6 +64,7 @@ type Session = {
 type MatchRecord = {
   revision: number;
   table: TableState;
+  turn: TurnState;
   lastActionSequence: Map<string, number>;
 };
 
@@ -80,6 +84,7 @@ const EVENT_LIMITS: Record<string, LimitRule> = {
   'room:leave': { capacity: 3, refillPerSecond: 0.2 },
   'chat:send': { capacity: 5, refillPerSecond: 0.5 },
   'match:request-state': { capacity: 8, refillPerSecond: 1 },
+  'match:end-turn': { capacity: 4, refillPerSecond: 0.5 },
   'match:action': { capacity: 90, refillPerSecond: 30 },
 };
 
@@ -94,6 +99,7 @@ const EVENT_MAX_BYTES: Record<string, number> = {
   'room:leave': 64,
   'chat:send': 1200,
   'match:request-state': 64,
+  'match:end-turn': 128,
   'match:action': 2048,
 };
 
@@ -237,6 +243,7 @@ function makeSnapshot(): PersistenceSnapshot {
       roomCode,
       revision: match.revision,
       table: match.table,
+      turn: match.turn,
       lastActionSequence: [...match.lastActionSequence.entries()],
     })),
     modules: [...modulePackages.values()],
@@ -445,6 +452,7 @@ function emitMatchViews(room: RoomState): void {
       seat: seat.seat,
       spectator: false,
       revision: match.revision,
+      turn: match.turn,
       table: projectTable(
         match.table,
         seat.seat as PlayerId,
@@ -459,6 +467,7 @@ function emitMatchViews(room: RoomState): void {
     socketForMember(spectator.memberId)?.emit('match:update', {
       spectator: true,
       revision: match.revision,
+      turn: match.turn,
       table: projectTable(match.table, undefined, undefined, policy.publicZones, policy.publicCountZones),
     });
   }
@@ -585,6 +594,9 @@ async function restoreState(): Promise<void> {
     matches.set(record.roomCode, {
       revision: record.revision,
       table,
+      turn: record.turn && Number.isSafeInteger(record.turn.number) && record.turn.number >= 1 &&
+        requiredSeats(rooms.get(record.roomCode)!.settings.format).includes(record.turn.seat)
+        ? record.turn : initialTurn(rooms.get(record.roomCode)!.settings.format),
       lastActionSequence: new Map(record.lastActionSequence),
     });
   }
@@ -840,6 +852,7 @@ io.on('connection', socket => {
     rooms.set(room.code, started);
     matches.set(room.code, {
       revision: 0,
+      turn: initialTurn(room.settings.format, started.series?.games.find(game => game.gameNumber === started.series?.currentGame)?.firstPlayerSeat),
       table: createInitialTableForModule(
         requiredSeats(room.settings.format),
         packageForRoom(started).module,
@@ -853,12 +866,36 @@ io.on('connection', socket => {
     scheduleSave();
   });
 
+  socket.on('match:end-turn', (payload: { expectedTurn?: unknown } = {}) => {
+    const session = currentSession(socket);
+    const room = session ? rooms.get(session.roomCode) : undefined;
+    const match = session ? matches.get(session.roomCode) : undefined;
+    if (!session || !room || room.status !== 'active' || !match) return fail(socket, 'No active match.');
+    if (session.spectator || session.seat !== match.turn.seat) return fail(socket, 'It is not your turn.');
+    if (payload.expectedTurn !== match.turn.number) return fail(socket, 'That turn has already ended.');
+
+    match.turn = endTurn(match.turn, room.settings.format);
+    match.revision += 1;
+    const updated = appendHistory(room, {
+      id: randomUUID(),
+      text: `Seat ${session.seat} ended their turn. Seat ${match.turn.seat} is up.`,
+      createdAt: new Date().toISOString(),
+      kind: 'turn',
+      actorSeat: session.seat,
+    });
+    rooms.set(room.code, updated);
+    emitRoom(updated);
+    emitMatchViews(updated);
+    scheduleSave();
+  });
+
   socket.on('match:action', (payload: { sequence?: unknown; action?: unknown } = {}) => {
     const session = currentSession(socket);
     const room = session ? rooms.get(session.roomCode) : undefined;
     const match = session ? matches.get(session.roomCode) : undefined;
     if (!session || !room || room.status !== 'active' || !match) return fail(socket, 'No active match.');
     if (session.spectator || !session.seat) return fail(socket, 'Spectators cannot manipulate the table.');
+    if (session.seat !== match.turn.seat) return fail(socket, 'Wait for your turn to move cards.');
     if (!Number.isSafeInteger(payload.sequence) || Number(payload.sequence) < 1) return fail(socket, 'Invalid action sequence.');
     if (!isClientTableAction(payload.action)) return fail(socket, 'Invalid match action.');
 

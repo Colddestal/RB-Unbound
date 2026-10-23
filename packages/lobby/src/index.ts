@@ -2,6 +2,7 @@ export type MatchFormat = '1v1' | '2v2' | 'ffa4';
 export type RulesetPreset = 'standard' | 'unrestricted' | 'custom';
 export type RoomStatus = 'lobby' | 'active' | 'closed';
 export type SeatNumber = 1 | 2 | 3 | 4;
+export type TurnState = { seat: SeatNumber; number: number };
 export type TeamNumber = 1 | 2 | 3 | 4;
 export type SeriesBestOf = 1 | 3;
 export type SeriesStatus = 'active' | 'complete';
@@ -65,7 +66,7 @@ export type RoomHistoryEntry = {
   id: string;
   text: string;
   createdAt: string;
-  kind: 'system' | 'draw' | 'shuffle' | 'tap' | 'flip' | 'zone' | 'stack';
+  kind: 'system' | 'turn' | 'draw' | 'shuffle' | 'tap' | 'flip' | 'zone' | 'stack';
   actorSeat?: SeatNumber;
 };
 
@@ -92,6 +93,17 @@ const teamFor = (format: MatchFormat, seat: SeatNumber): TeamNumber => {
 
 export const requiredSeats = (format: MatchFormat): SeatNumber[] =>
   format === '1v1' ? [1, 2] : [1, 2, 3, 4];
+
+export function initialTurn(format: MatchFormat, firstSeat?: SeatNumber): TurnState {
+  const seats = requiredSeats(format);
+  return { seat: firstSeat && seats.includes(firstSeat) ? firstSeat : seats[0], number: 1 };
+}
+
+export function endTurn(turn: TurnState, format: MatchFormat): TurnState {
+  const seats = requiredSeats(format);
+  const index = seats.indexOf(turn.seat);
+  return { seat: seats[(index + 1) % seats.length], number: turn.number + 1 };
+}
 
 export const playerSeatCount = (format: MatchFormat): 2 | 4 =>
   format === '1v1' ? 2 : 4;
