@@ -261,3 +261,5 @@ button:focus-visible,select:focus-visible,input:focus-visible,.card:focus-visibl
 .spectator-slot.occupied{border-style:solid;background:#132235;color:#e1ebf4}
 .movable-zone-card{cursor:grab}
 .movable-zone-card:active{cursor:grabbing}
+
+.module-zone-area.spatial-drop-target{outline:2px solid #75d6bf66;box-shadow:inset 0 0 0 1px #75d6bf44,0 0 18px #75d6bf22}
