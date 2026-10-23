@@ -254,3 +254,10 @@ button:focus-visible,select:focus-visible,input:focus-visible,.card:focus-visibl
   .dock-resize-column{width:100%!important;max-width:none}
   .dock-resize-handle{display:none}
 }
+
+.spectator-heading{margin:14px 0 7px;font-size:12px;color:#b7c9d8;letter-spacing:.4px}
+.spectator-slot-list{display:grid;gap:7px;margin-bottom:12px}
+.spectator-slot{display:grid;grid-template-columns:95px 1fr auto;gap:8px;align-items:center;padding:8px;border:1px dashed #2d435a;border-radius:8px;color:#73889b;background:#0b1521}
+.spectator-slot.occupied{border-style:solid;background:#132235;color:#e1ebf4}
+.movable-zone-card{cursor:grab}
+.movable-zone-card:active{cursor:grabbing}
