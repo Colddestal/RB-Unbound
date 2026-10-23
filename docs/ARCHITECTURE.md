@@ -378,3 +378,17 @@ The Full Mat Prototype uses:
 - Runes: `group: runes`
 
 Base and Runes are movable card zones. Cards in those zones use the same authoritative `move` action, pointer dragging, box selection, keyboard nudging, tap/flip controls and right-click actions as ordinary field cards. A card in Base remains visually in Base while being semantically part of the broader battlefield interaction group. Cross-zone stacking is permitted only when both zones are movable and share the same logical group.
+
+
+## Horizontal zone card layout
+
+Module zones may declare `cardLayout: "horizontal"` for untouched cards that should automatically fan across the zone rather than stack diagonally.
+
+The Full Mat Prototype uses this for the Runes row. Newly drawn Runes:
+- stay on one horizontal line
+- spread evenly across the available Rune-zone width
+- compress spacing as the row fills so all 12 starter Runes remain on the mat
+- remain individually selectable
+- keep automatic positions only until the player manually moves that card
+
+The authoritative table state still stores untouched drawn Runes at their neutral coordinates. Local and Multiplayer derive the same deterministic presentation position from zone geometry, card order and current zone count. Once a Rune is manually dragged, its explicit x/y coordinates override the automatic row layout.
