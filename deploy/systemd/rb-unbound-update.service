@@ -1,0 +1,8 @@
+[Unit]
+Description=Check GitHub main for a validated RB Unbound server update
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/rb-unbound/current/deploy/update.sh

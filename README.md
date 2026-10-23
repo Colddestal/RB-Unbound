@@ -40,7 +40,8 @@ npm run dev:server
 - `apps/web` — React + TypeScript interface and manual tabletop prototype
 - `apps/desktop` — future Tauri wrapper
 - `packages/tabletop` — shared state and tabletop action contracts
-- `server` — early multiplayer transport spike
+- `server` — private-room multiplayer alpha server
+- `deploy/README.md` — private Linux server setup and unattended GitHub updates
 - `docs/ROADMAP.md` — development plan and authorization gates
 - `docs/ARCHITECTURE.md` — technical design, security and scope
 
