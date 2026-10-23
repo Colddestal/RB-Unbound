@@ -10,11 +10,15 @@ RB Unbound is an early-stage, free, community-oriented **general-purpose digital
 
 - **Manual-first:** move, rotate, flip, shuffle, and organize cards without automated game-rule enforcement.
 - **Two clients, one UI:** browser first; a Tauri desktop wrapper is planned.
-- **Online multiplayer:** private rooms and server-synchronized tables are planned; the local prototype works without an account.
+- **Multiplayer alpha:** private rooms and server-synchronized tables work with the development server; public hosting is still planned. The local tabletop works without an account.
 - **Game-neutral:** no copyrighted card assets or proprietary rules are bundled. A sample prototype module is included.
 - **Automation later:** a generic, optional rule engine may be developed for original/authorized game modules. Automated Riftbound gameplay will not be implemented or distributed without express Riot authorization.
 
 ## Getting started
+
+The playable local sandbox is also published at [the browser demo](https://colddestal.github.io/RB-Unbound/demo/). The root GitHub Pages URL remains the project and Riot verification page. The hosted demo is static; multiplayer needs the separate local server until production hosting is ready.
+
+To rebuild the checked-in GitHub Pages demo after changing the web app, run `npm install` and `npm run build:demo`, then commit the updated `demo/` files.
 
 Requires Node.js 20.19+ or 22.12+ and npm.
 
@@ -23,9 +27,9 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL shown in the terminal. The current prototype runs **locally only**: draggable, rotatable, flippable placeholder cards and JSON table export/import. Online multiplayer is a planned milestone, not a shipped feature.
+Open the Vite URL shown in the terminal. Local play supports manual card movement, turns, and JSON table export/import. The browser demo hosts local play, while multiplayer requires a running development server.
 
-To run the optional experimental Socket.IO relay (not yet connected to the UI):
+To run the multiplayer development server in another terminal:
 
 ```bash
 npm run dev:server
