@@ -508,7 +508,8 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
           execute({ type: 'to-zone', id: card.id, zone: 'hand', actor: viewer });
           addLocalHistory(`Player ${viewer} returned a card to their hand.`);
         } else if (mode === 'field' && rect && pointInRect({ x: event.clientX, y: event.clientY }, rect)) {
-          const targetZone = spatialLayerForCard(card, dropCursorPoint(event.clientX, event.clientY, rect));
+          const targetZone = spatialLayerForCard(card, dropCursorPoint(event.clientX, event.clientY, rect)) ??
+            (zoneGroupFor(card.zone) === 'battlefield' && card.zone !== 'field' ? 'field' : undefined);
           if (targetZone && targetZone !== card.zone) {
             execute({ type: 'to-zone', id: card.id, zone: targetZone, actor: viewer });
             addLocalHistory(`Player ${viewer} moved a card into ${zoneLabel(targetZone)}.`);
