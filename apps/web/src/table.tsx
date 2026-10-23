@@ -66,6 +66,13 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
     }
     return zone.defaultPosition ? toViewerPoint(zone.defaultPosition, viewer, '1v1') : undefined;
   };
+  const canonicalZonePosition = (zone: ModuleZoneDefinition, player?: PlayerId) => {
+    if (zone.ownerScoped && player) {
+      const seatKey = String(player) as '1' | '2' | '3' | '4';
+      return zone.seatPositions?.[seatKey] ?? zone.defaultPosition;
+    }
+    return zone.defaultPosition;
+  };
   const [table, setTable] = useState<TableState>(() =>
     createInitialTableForModule([1, 2], defaultPackage.module, defaultPackage.cards));
   const [viewer, setViewer] = useState<PlayerId>(1);
@@ -96,13 +103,22 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
 
   const allowedZones = activeModule.zones.map(zone => zone.id);
   const stackableZones = activeModule.zones.filter(zone => zone.stackable).map(zone => zone.id);
+  const movableZoneSet = new Set(stackableZones);
+  const zoneGroups = new Map(activeModule.zones.map(zone => [zone.id, zone.group ?? zone.id] as const));
+  const zoneGroupFor = (zoneId: string) => zoneGroups.get(zoneId) ?? zoneId;
   const execute = (action: Parameters<typeof applyAction>[1]) =>
-    setTable(state => applyAction(state, action, allowedZones, stackableZones));
+    setTable(state => applyAction(state, action, allowedZones, stackableZones, zoneGroups));
   const selectedCard = table.cards.find(card => card.id === selected);
   const selectedCards = table.cards.filter(card => multiSelected.includes(card.id));
   const inspectorCard = table.cards.find(card => card.id === (hovered || pinned));
   const inspectorPinned = Boolean(pinned && !hovered);
-  const ownFieldCards = table.cards.filter(card => card.owner === viewer && card.zone === 'field' && card.id !== selected);
+  const ownStackCards = selectedCard
+    ? table.cards.filter(card =>
+      card.owner === viewer &&
+      card.id !== selectedCard.id &&
+      movableZoneSet.has(card.zone) &&
+      zoneGroupFor(card.zone) === zoneGroupFor(selectedCard.zone))
+    : [];
   const contextCard = cardContext ? table.cards.find(card => card.id === cardContext.cardId) : undefined;
   const handZoneId = activeModule.zones.find(zone => zone.kind === 'hand')?.id;
   const discardZoneId = activeModule.zones.find(zone => zone.kind === 'discard')?.id;
@@ -218,15 +234,22 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
 
   const targets = selectedCards.length ? selectedCards : (selectedCard ? [selectedCard] : []);
 
+  const moveCardToZone = (card: Card, zone: Card['zone']) => {
+    execute({ type: 'to-zone', id: card.id, zone, actor: viewer });
+    const targetZone = activeModule.zones.find(item => item.id === zone);
+    const position = targetZone?.kind === 'custom' && targetZone.stackable
+      ? canonicalZonePosition(targetZone, card.owner)
+      : undefined;
+    if (position) execute({ type: 'move', id: card.id, actor: viewer, x: position.x, y: position.y });
+  };
+
   const moveTargets = (zone: Card['zone']) => {
     const ownedTargets = targets.filter(card => card.owner === viewer);
-    for (const card of ownedTargets) {
-      execute({ type: 'to-zone', id: card.id, zone, actor: viewer });
-    }
+    for (const card of ownedTargets) moveCardToZone(card, zone);
     if (ownedTargets.length) {
       addLocalHistory(`Player ${viewer} moved ${ownedTargets.length === 1 ? 'a card' : `${ownedTargets.length} cards`} to ${zoneLabel(zone)}.`);
     }
-    if (zone !== 'field') setStackTarget('');
+    if (!movableZoneSet.has(zone)) setStackTarget('');
   };
 
   const rotateTargets = () => {
@@ -242,7 +265,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
   };
 
   const stackSelected = () => {
-    if (!selectedCard || !stackTarget || selectedCard.zone !== 'field') return;
+    if (!selectedCard || !stackTarget || !movableZoneSet.has(selectedCard.zone)) return;
     execute({ type: 'stack', id: selectedCard.id, targetId: stackTarget, actor: viewer });
     addLocalHistory(`Player ${viewer} stacked ${selectedCard.label}.`);
   };
@@ -263,7 +286,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
 
   const moveContextCard = (zone: string) => {
     if (!contextCard || contextCard.owner !== viewer) return;
-    execute({ type: 'to-zone', id: contextCard.id, zone, actor: viewer });
+    moveCardToZone(contextCard, zone);
     addLocalHistory(`Player ${viewer} moved a card to ${zoneLabel(zone)}.`);
   };
 
@@ -308,7 +331,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       else if (action === 'discard') moveTargets('discard');
       else if (action === 'moveHand') moveTargets('hand');
       else if (action === 'playField') moveTargets('field');
-      else if (targets.every(card => card.zone === 'field') && ['moveUp', 'moveDown', 'moveLeft', 'moveRight'].includes(action)) {
+      else if (targets.every(card => movableZoneSet.has(card.zone)) && ['moveUp', 'moveDown', 'moveLeft', 'moveRight'].includes(action)) {
         const step = event.shiftKey ? 50 : 15;
         const dx = action === 'moveLeft' ? -step : action === 'moveRight' ? step : 0;
         const dy = action === 'moveUp' ? -step : action === 'moveDown' ? step : 0;
@@ -614,11 +637,11 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       {activeModule.zones.filter(zone => zone.kind === 'custom').map(zone =>
         <button key={zone.id} disabled={!targets.length} onClick={() => moveTargets(zone.id)}>To {zone.label}</button>
       )}
-      <select value={stackTarget} onChange={e => setStackTarget(e.target.value)} disabled={!selectedCard || selectedCard.zone !== 'field'}>
+      <select value={stackTarget} onChange={e => setStackTarget(e.target.value)} disabled={!selectedCard || !movableZoneSet.has(selectedCard.zone)}>
         <option value="">Stack target…</option>
-        {ownFieldCards.map(card => <option key={card.id} value={card.id}>{card.label}</option>)}
+        {ownStackCards.map(card => <option key={card.id} value={card.id}>{card.label}</option>)}
       </select>
-      <button disabled={!selectedCard || !stackTarget || selectedCard.zone !== 'field'} onClick={stackSelected}>Stack</button>
+      <button disabled={!selectedCard || !stackTarget || !movableZoneSet.has(selectedCard.zone)} onClick={stackSelected}>Stack</button>
       <button disabled={!selectedCard?.stackOn} onClick={unstackSelected}>Unstack</button>
     </section>
 
@@ -692,7 +715,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
           const cardHalfWidth = (renderedCard?.offsetWidth ?? 64) / 2;
           const cardHalfHeight = (renderedCard?.offsetHeight ?? 88) / 2;
           const ids = table.cards
-            .filter(card => card.owner === viewer && card.zone === 'field')
+            .filter(card => card.owner === viewer && movableZoneSet.has(card.zone))
             .filter(card => {
               const point = toViewerPoint({ x: card.x, y: card.y }, viewer, '1v1');
               const cx = (point.x / 1000) * rect.width + cardHalfWidth;
