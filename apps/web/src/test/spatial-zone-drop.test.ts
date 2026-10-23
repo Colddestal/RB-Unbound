@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { frontierSkirmishModule } from '@rb-unbound/tabletop';
+import {
+  applyAction,
+  frontierSkirmishModule,
+  type TableState,
+} from '@rb-unbound/tabletop';
 import { spatialDropZone } from '../spatial-zone-drop';
 
 describe('spatial battlefield layer snapping', () => {
@@ -37,5 +41,53 @@ describe('spatial battlefield layer snapping', () => {
       1,
       'battlefield',
     )).toBeUndefined();
+  });
+});
+
+
+describe('battlefield layer transitions', () => {
+  const allowedZones = frontierSkirmishModule.zones.map(zone => zone.id);
+  const stackableZones = frontierSkirmishModule.zones.filter(zone => zone.stackable).map(zone => zone.id);
+  const zoneGroups = new Map(frontierSkirmishModule.zones.map(zone => [zone.id, zone.group ?? zone.id] as const));
+
+  const state: TableState = {
+    version: 4,
+    cards: [{
+      id: 'unit-1',
+      label: 'Unit',
+      owner: 1,
+      zone: 'field',
+      order: 0,
+      x: 520,
+      y: 405,
+      rotation: 0,
+      faceUp: true,
+    }],
+  };
+
+  it('preserves exact coordinates when snapping field into Base', () => {
+    const result = applyAction(state, {
+      type: 'to-zone',
+      id: 'unit-1',
+      actor: 1,
+      zone: 'base',
+    }, allowedZones, stackableZones, zoneGroups);
+
+    expect(result.cards[0]).toMatchObject({ zone: 'base', x: 520, y: 405 });
+  });
+
+  it('preserves exact coordinates when snapping Base back to Combat Area', () => {
+    const baseState: TableState = {
+      ...state,
+      cards: [{ ...state.cards[0], zone: 'base', x: 470, y: 330 }],
+    };
+    const result = applyAction(baseState, {
+      type: 'to-zone',
+      id: 'unit-1',
+      actor: 1,
+      zone: 'field',
+    }, allowedZones, stackableZones, zoneGroups);
+
+    expect(result.cards[0]).toMatchObject({ zone: 'field', x: 470, y: 330 });
   });
 });
