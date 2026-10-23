@@ -145,6 +145,8 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       zoneGroupFor(card.zone) === zoneGroupFor(selectedCard.zone))
     : [];
   const contextCard = cardContext ? table.cards.find(card => card.id === cardContext.cardId) : undefined;
+  const draggedCard = fieldDragId ? table.cards.find(card => card.id === fieldDragId) : undefined;
+  const draggedGroup = draggedCard ? zoneGroupFor(draggedCard.zone) : undefined;
   const handZoneId = activeModule.zones.find(zone => zone.kind === 'hand')?.id;
   const discardZoneId = activeModule.zones.find(zone => zone.kind === 'discard')?.id;
   const deckZoneId = activeModule.zones.find(zone => zone.kind === 'deck')?.id;
@@ -834,7 +836,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
               : table.cards.filter(card => card.zone === zone.id).length;
             return [<div
               key={`${zone.id}-${player ?? 'shared'}`}
-              className={`module-zone-area module-zone-${zone.kind} module-zone-behavior-${zone.behavior ?? 'legacy'} module-zone-role-${zone.role ?? 'none'}`}
+              className={`module-zone-area module-zone-${zone.kind} module-zone-behavior-${zone.behavior ?? 'legacy'} module-zone-role-${zone.role ?? 'none'} ${draggedGroup === 'battlefield' && zone.group === 'battlefield' ? 'spatial-drop-target' : ''}`}
               style={{
                 left: `${position.x / 10}%`,
                 top: `${position.y / 6}%`,
