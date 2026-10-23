@@ -1,0 +1,17 @@
+[Unit]
+Description=RB Unbound private multiplayer server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/rb-unbound/current
+Environment=RB_UNBOUND_STATE_PATH=%h/rb-unbound/state/server-state.json
+ExecStart=%h/rb-unbound/current/deploy/run-server.sh
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

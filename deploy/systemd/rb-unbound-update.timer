@@ -1,0 +1,11 @@
+[Unit]
+Description=Update RB Unbound from GitHub every 15 minutes
+
+[Timer]
+OnCalendar=*:0/15
+RandomizedDelaySec=1m
+Persistent=true
+Unit=rb-unbound-update.service
+
+[Install]
+WantedBy=timers.target

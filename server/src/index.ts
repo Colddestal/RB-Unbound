@@ -103,7 +103,12 @@ const EVENT_MAX_BYTES: Record<string, number> = {
   'match:action': 2048,
 };
 
-const httpServer = createServer((_req, res) => {
+const httpServer = createServer((req, res) => {
+  if (req.url === '/healthz' && req.method === 'GET') {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({ status: 'ok', commit: process.env.RB_UNBOUND_RELEASE_SHA ?? 'development' }));
+    return;
+  }
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ service: 'RB Unbound multiplayer', status: 'development' }));
 });
