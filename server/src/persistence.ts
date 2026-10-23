@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import type { RoomState } from '@rb-unbound/lobby';
+import type { TurnState } from '@rb-unbound/lobby';
 import type { ModulePackage, PlayerId, TableState } from '@rb-unbound/tabletop';
 
 export type PersistedSession = {
@@ -17,6 +18,7 @@ export type PersistedMatch = {
   roomCode: string;
   revision: number;
   table: TableState;
+  turn?: TurnState;
   lastActionSequence: Array<[string, number]>;
 };
 

@@ -78,6 +78,8 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
   const [table, setTable] = useState<TableState>(() =>
     createInitialTableForModule([1, 2], defaultPackage.module, defaultPackage.cards));
   const [viewer, setViewer] = useState<PlayerId>(1);
+  const [turnNumber, setTurnNumber] = useState(1);
+  const [confirmEndTurn, setConfirmEndTurn] = useState(false);
   const [selected, setSelected] = useState<string>('');
   const [multiSelected, setMultiSelected] = useState<string[]>([]);
   const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
@@ -188,6 +190,9 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       }
       setSelected('');
       setStackTarget('');
+      setViewer(1);
+      setTurnNumber(1);
+      setConfirmEndTurn(false);
       setError('');
     } catch {
       setError('Could not load this table file. Current saves and legacy v3/v4 table files are supported.');
@@ -532,6 +537,9 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
     if (!nextPackage) return;
     setModuleKey(key);
     setTable(createInitialTableForModule([1, 2], nextPackage.module, nextPackage.cards));
+    setViewer(1);
+    setTurnNumber(1);
+    setConfirmEndTurn(false);
     setSelected('');
     setMultiSelected([]);
     setPinned('');
@@ -702,7 +710,7 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
     </header>
 
     <section className="viewer-bar">
-      <strong>Local player view</strong>
+      <strong>Local pass-and-play · Turn {turnNumber}</strong>
       <label className="module-picker">Module
         <select value={modulePackageKey(activeModule)} onChange={e => selectModule(e.target.value)}>
           {modulePackages.map(bundle => {
@@ -711,8 +719,24 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
           })}
         </select>
       </label>
-      <button className={viewer === 1 ? 'active' : ''} onClick={() => { setViewer(1); setSelected(''); }}>Player 1</button>
-      <button className={viewer === 2 ? 'active' : ''} onClick={() => { setViewer(2); setSelected(''); }}>Player 2</button>
+      <span className="turn-indicator" role="status">Player {viewer}'s turn · Player {viewer} at the bottom</span>
+      {confirmEndTurn ? <>
+        <span className="muted">Pass the table to Player {viewer === 1 ? 2 : 1}?</span>
+        <button className="primary" onClick={() => {
+          const next = viewer === 1 ? 2 : 1;
+          addLocalHistory(`Player ${viewer} ended their turn. Player ${next} is up.`);
+          setViewer(next);
+          setTurnNumber(number => number + 1);
+          setSelected('');
+          setMultiSelected([]);
+          setHovered('');
+          setPinned('');
+          setStackTarget('');
+          setCardContext(null);
+          setConfirmEndTurn(false);
+        }}>Confirm end turn</button>
+        <button onClick={() => setConfirmEndTurn(false)}>Cancel</button>
+      </> : <button className="primary" onClick={() => setConfirmEndTurn(true)}>End Turn</button>}
       <span className="chip">Opponent hand stays hidden</span>
       <span className="chip">PC controls enabled</span>
       <span className="chip">{activeModule.name} · {cardBack.label}</span>
@@ -754,6 +778,9 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       <button onClick={() => fileRef.current?.click()}>Import table</button>
       <button onClick={() => {
         setTable(createInitialTableForModule([1, 2], activeModule, activePackage.cards));
+        setViewer(1);
+        setTurnNumber(1);
+        setConfirmEndTurn(false);
         setSelected('');
         setMultiSelected([]);
         setPinned('');
