@@ -243,6 +243,8 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
       zoneGroupFor(card.zone) === zoneGroupFor(selectedCard.zone)) ?? []
     : [];
   const contextCard = cardContext ? match?.table.cards.find(card => card.id === cardContext.cardId) : undefined;
+  const draggedCard = fieldDragId ? match?.table.cards.find(card => card.id === fieldDragId) : undefined;
+  const draggedGroup = draggedCard ? zoneGroupFor(draggedCard.zone) : undefined;
   const handZoneId = activeModule.zones.find(zone => zone.kind === 'hand')?.id;
   const discardZoneId = activeModule.zones.find(zone => zone.kind === 'discard')?.id;
   const deckZoneId = activeModule.zones.find(zone => zone.kind === 'deck')?.id;
@@ -732,7 +734,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
                   : match.table.cards.filter(card => card.owner === player && card.zone === zone.id).length)
                 : match.table.cards.filter(card => card.zone === zone.id).length;
               return [<div
-                className={`module-zone-area module-zone-${zone.kind} module-zone-behavior-${zone.behavior ?? 'legacy'} module-zone-role-${zone.role ?? 'none'}`}
+                className={`module-zone-area module-zone-${zone.kind} module-zone-behavior-${zone.behavior ?? 'legacy'} module-zone-role-${zone.role ?? 'none'} ${draggedGroup === 'battlefield' && zone.group === 'battlefield' ? 'spatial-drop-target' : ''}`}
                 key={`${zone.id}-${player ?? 'shared'}`}
                 style={{
                   left: `${position.x / 10}%`,
