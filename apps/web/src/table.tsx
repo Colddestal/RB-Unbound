@@ -673,8 +673,7 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
 
   return <div className="app">
     <header>
-      <div><span className="eyebrow">PROJECT POOR PRESENTS</span><h1>RB UNBOUND</h1><p>Manual tabletop alpha · Decks, hands, discard and stacks</p></div>
-      <a href="https://github.com/Colddestal/RB-Unbound" target="_blank" rel="noreferrer">View GitHub ↗</a>
+      <div><span className="eyebrow">{showEditor ? 'BUILD YOUR LOADOUT' : 'LOCAL PLAY'}</span><h1>{showEditor ? 'Deck editor' : 'Local tabletop'}</h1><p>{showEditor ? 'Create and refine a deck before bringing it to the table.' : 'Manual tabletop play · decks, hands, discard and stacks'}</p></div>
     </header>
 
     {showEditor ? <>

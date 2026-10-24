@@ -480,7 +480,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   if (!room) {
     return <div className="app multiplayer-shell">
       <header>
-        <div><span className="eyebrow">PROJECT POOR PRESENTS</span><h1>RB UNBOUND</h1><p>Multiplayer development alpha</p></div>
+        <div><span className="eyebrow">PLAY TOGETHER</span><h1>Multiplayer rooms</h1><p>Create a room or join a table with friends.</p></div>
         <span className={`connection-pill ${connected ? 'online' : ''}`}>{connected ? 'Server connected' : 'Server offline'}</span>
       </header>
 
