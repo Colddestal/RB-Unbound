@@ -1,4 +1,4 @@
-import { builtInCardCatalog, starterDeckForModule } from './deck.js';
+import { builtInCardCatalog, sectionCards, starterDeckForModule } from './deck.js';
 import type { GameModule } from './game-module.js';
 
 export type PlayerId = 1 | 2 | 3 | 4;
@@ -142,7 +142,22 @@ export function createInitialTableForModule(
         } satisfies Card))
       );
 
-      return [...mainDeck, ...extraPiles];
+      const prepared = ([
+        ['legend', 'commander'], ['champion', 'vanguard'],
+        ['runes', 'resource-deck'], ['sideDeck', 'side-deck'],
+      ] as const).flatMap(([section, zone]) => {
+        if (!module.zones.some(item => item.id === zone)) return [];
+        return sectionCards(deck, section).flatMap((definitionId, index) => {
+          const definition = catalog.get(definitionId);
+          if (!definition) return [];
+          return [{
+            id: `p${owner}-${zone}-${index + 1}`, definitionId, label: definition.name, owner,
+            zone, order: index, x: 0, y: 0, rotation: 0,
+            faceUp: zone === 'commander' || zone === 'vanguard',
+          } satisfies Card];
+        });
+      });
+      return [...mainDeck, ...extraPiles.filter(card => card.zone !== 'resource-deck' || !sectionCards(deck, 'runes').length), ...prepared];
     }),
   };
 }

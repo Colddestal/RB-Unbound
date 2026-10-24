@@ -8,7 +8,7 @@ import { Multiplayer } from './multiplayer';
 import { Table } from './table';
 
 export function App() {
-  const [mode, setMode] = useState<'local' | 'multiplayer'>('local');
+  const [mode, setMode] = useState<'local' | 'multiplayer' | 'decks'>('local');
   const [bindings, setBindings] = useState<KeyBindings>(() => loadBindings());
   const [modulePackages, setModulePackages] = useState<ModulePackage[]>(() => loadInstalledModulePackages());
   const [showControls, setShowControls] = useState(false);
@@ -27,14 +27,15 @@ export function App() {
   return <>
     <nav className="mode-switch" aria-label="Play mode">
       <button className={mode === 'local' ? 'active' : ''} onClick={() => setMode('local')}>Local sandbox</button>
+      <button className={mode === 'decks' ? 'active' : ''} onClick={() => setMode('decks')}>Deck editor</button>
       <button className={mode === 'multiplayer' ? 'active' : ''} onClick={() => setMode('multiplayer')}>Multiplayer alpha</button>
       <button onClick={() => setShowModules(true)}>Modules</button>
       <button onClick={() => setShowControls(true)}>Options</button>
     </nav>
 
-    {mode === 'local'
-      ? <Table bindings={bindings} modulePackages={modulePackages} />
-      : <Multiplayer bindings={bindings} modulePackages={modulePackages} />}
+    {mode === 'multiplayer'
+      ? <Multiplayer bindings={bindings} modulePackages={modulePackages} />
+      : <Table bindings={bindings} modulePackages={modulePackages} showEditor={mode === 'decks'} onOpenTable={() => setMode('local')} />}
 
     {showModules && <ModuleOptions packages={modulePackages} onChange={updateModulePackages} onClose={() => setShowModules(false)} />}
     {showControls && <ControlsOptions bindings={bindings} onChange={updateBindings} onClose={() => setShowControls(false)} />}

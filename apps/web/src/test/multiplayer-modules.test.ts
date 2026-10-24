@@ -25,7 +25,8 @@ describe('multiplayer module contracts', () => {
     const frontier = createInitialTableForModule([1, 2], frontierSkirmishModule);
 
     expect(generic.cards.every(card => card.definitionId?.startsWith('dust-') !== true)).toBe(true);
-    expect(frontier.cards.some(card => card.definitionId === 'dust-runner')).toBe(true);
+    expect(frontier.cards.some(card => card.definitionId === 'blue-1' && card.zone === 'deck')).toBe(true);
+    expect(frontier.cards.some(card => card.definitionId === 'legend-tidekeeper' && card.zone === 'commander')).toBe(true);
     expect(generic.cards.some(card => card.definitionId === 'wandering-scout')).toBe(true);
   });
 });

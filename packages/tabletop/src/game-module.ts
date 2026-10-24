@@ -376,6 +376,21 @@ export const frontierSkirmishModule: GameModule = {
       size: { width: 70, height: 82 },
     },
     {
+      id: 'side-deck',
+      label: 'Side Deck',
+      kind: 'custom',
+      visibility: 'hidden',
+      ownerScoped: true,
+      behavior: 'pile',
+      role: 'side-deck',
+      pile: { shuffle: false, countPublic: true },
+      seatPositions: {
+        '1': { x: 170, y: 565 },
+        '2': { x: 170, y: 225 },
+      },
+      size: { width: 70, height: 82 },
+    },
+    {
       id: 'discard',
       label: 'Trash',
       kind: 'discard',
@@ -451,6 +466,10 @@ export const frontierSkirmishModule: GameModule = {
     { id: 'class', label: 'Class', type: 'text' },
     { id: 'power', label: 'Power', type: 'number' },
     { id: 'tags', label: 'Tags', type: 'tags' },
+    { id: 'slot', label: 'Section', type: 'text' },
+    { id: 'affinities', label: 'Affinities', type: 'tags' },
+    { id: 'identity', label: 'Character', type: 'text' },
+    { id: 'rules', label: 'Sample text', type: 'text' },
   ],
 };
 
