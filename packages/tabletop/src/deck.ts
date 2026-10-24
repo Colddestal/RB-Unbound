@@ -186,22 +186,31 @@ function frontierSamples(): CardDefinition[] {
     purple: ['Dusk Scribe', 'Moon Courier', 'Violet Echo', 'Shadow Lantern', 'Nightfall Scout', 'Amethyst Ward', 'Twilight Map'],
   };
   const legends = [
-    card('legend-tidekeeper', 'Mira, Tidekeeper', 'legend', ['blue', 'green'], { identity: 'Mira', rules: 'Original sample legend. Choose blue and green cards.' }),
-    card('legend-emberguide', 'Orin, Emberguide', 'legend', ['red', 'orange'], { identity: 'Orin', rules: 'Original sample legend. Choose red and orange cards.' }),
-    card('legend-dawnwatch', 'Sera, Dawnwatch', 'legend', ['yellow', 'purple'], { identity: 'Sera', rules: 'Original sample legend. Choose yellow and purple cards.' }),
+    card('legend-tidekeeper', 'Mira, Tidekeeper', 'legend', ['blue', 'green'], { identity: 'Mira', rules: 'Build with blue and green cards. Once per turn, you may ready a unit. Resolve this manually.' }),
+    card('legend-emberguide', 'Orin, Emberguide', 'legend', ['red', 'orange'], { identity: 'Orin', rules: 'Build with red and orange cards. Once per turn, give a unit +1 power. Resolve this manually.' }),
+    card('legend-dawnwatch', 'Sera, Dawnwatch', 'legend', ['yellow', 'purple'], { identity: 'Sera', rules: 'Build with yellow and purple cards. Once per turn, look at the top card of your deck. Resolve this manually.' }),
   ];
   const champions = [
-    card('champion-mira', 'Mira, Riverward', 'champion', ['blue', 'green'], { identity: 'Mira', rules: 'Original sample champion.' }),
-    card('champion-orin', 'Orin, Trailblazer', 'champion', ['red', 'orange'], { identity: 'Orin', rules: 'Original sample champion.' }),
-    card('champion-sera', 'Sera, Starlight', 'champion', ['yellow', 'purple'], { identity: 'Sera', rules: 'Original sample champion.' }),
+    card('champion-mira', 'Mira, Riverward', 'champion', ['blue', 'green'], { identity: 'Mira', rules: 'When played, ready one of your units. Resolve this manually.' }),
+    card('champion-orin', 'Orin, Trailblazer', 'champion', ['red', 'orange'], { identity: 'Orin', rules: 'When played, give another unit +1 power this turn. Resolve this manually.' }),
+    card('champion-sera', 'Sera, Starlight', 'champion', ['yellow', 'purple'], { identity: 'Sera', rules: 'When played, look at the top card of your deck. Resolve this manually.' }),
   ];
-  const runes = AFFINITIES.map(color => card(`rune-${color}`, `${color[0].toUpperCase()}${color.slice(1)} Rune`, 'runes', [color], { rules: 'Basic sample rune · no artwork.' }));
+  const runes = AFFINITIES.map(color => card(`rune-${color}`, `${color[0].toUpperCase()}${color.slice(1)} Rune`, 'runes', [color], { rules: `A basic ${color} sample rune. Track its use manually.` }));
+  const sampleEffects = [
+    'When played, ready one of your cards. Resolve this manually.',
+    'Look at the top card of your deck. Resolve this manually.',
+    'Give one of your units +1 power this turn. Resolve this manually.',
+    'When played, draw one card. Resolve this manually.',
+    'Move one of your units to another area. Resolve this manually.',
+    'If you control a base, this gains +1 power this turn. Resolve this manually.',
+    'Return one of your cards to your hand. Resolve this manually.',
+  ];
   const main = AFFINITIES.flatMap(color => names[color].map((name, index) =>
-    card(`${color}-${index + 1}`, name, 'deck', [color], { class: index % 3 === 0 ? 'Unit' : 'Spell', power: index % 5 + 1 })));
+    card(`${color}-${index + 1}`, name, 'deck', [color], { class: index % 3 === 0 ? 'Unit' : 'Spell', power: index % 5 + 1, rules: sampleEffects[index] })));
   const mixed = [
-    card('river-canopy', 'River Canopy', 'deck', ['blue', 'green'], { class: 'Spell', power: 2 }),
-    card('ember-dune', 'Ember Dune', 'deck', ['red', 'orange'], { class: 'Spell', power: 2 }),
-    card('dusk-dawn', 'Dusk and Dawn', 'deck', ['yellow', 'purple'], { class: 'Spell', power: 2 }),
+    card('river-canopy', 'River Canopy', 'deck', ['blue', 'green'], { class: 'Spell', power: 2, rules: 'Ready one of your units, then move it to another area. Resolve this manually.' }),
+    card('ember-dune', 'Ember Dune', 'deck', ['red', 'orange'], { class: 'Spell', power: 2, rules: 'Give one of your units +2 power this turn. Resolve this manually.' }),
+    card('dusk-dawn', 'Dusk and Dawn', 'deck', ['yellow', 'purple'], { class: 'Spell', power: 2, rules: 'Look at the top card of your deck, then draw a card. Resolve this manually.' }),
   ];
   return [...legends, ...champions, ...runes, ...main, ...mixed];
 }

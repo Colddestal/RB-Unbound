@@ -57,6 +57,23 @@ describe('DeckTools', () => {
     expect(screen.getByRole('button', { name: 'Load to Player 1' })).toBeEnabled();
   });
 
+  it('shows colored list thumbnails and a readable card beside the pointer on hover or focus', () => {
+    openEditor();
+    const row = screen.getByLabelText('Preview Tide Scout');
+    expect(within(row).getByLabelText('blue')).toBeInTheDocument();
+    fireEvent.mouseEnter(row, { clientX: 1000, clientY: 400 });
+    const tooltip = screen.getByRole('tooltip');
+    expect(tooltip).toHaveTextContent('Tide Scout');
+    expect(tooltip).toHaveTextContent('When played, ready one of your cards. Resolve this manually.');
+    expect(tooltip).toHaveStyle({ left: '732px', top: '226px' });
+    fireEvent.mouseLeave(row);
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+    fireEvent.focus(row);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Tide Scout');
+    fireEvent.keyDown(row, { key: 'Escape' });
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+  });
+
   it('uses a separate app view and loads the chosen rune, legend, champion, and side piles', () => {
     render(<App />);
     expect(screen.queryByLabelText('Deck editor')).not.toBeInTheDocument();
