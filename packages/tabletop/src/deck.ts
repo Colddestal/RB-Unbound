@@ -16,7 +16,73 @@ export type DeckDefinition = {
   moduleVersion: string;
   name: string;
   cards: string[];
+  sections?: {
+    legend: string[];
+    runes: string[];
+    champion: string[];
+    sideDeck: string[];
+  };
 };
+
+export const DECK_SECTIONS = ['legend', 'runes', 'champion', 'deck', 'sideDeck'] as const;
+export type DeckSection = typeof DECK_SECTIONS[number];
+export const AFFINITIES = ['blue', 'red', 'green', 'orange', 'yellow', 'purple'] as const;
+export type Affinity = typeof AFFINITIES[number];
+
+export function cardSection(card: CardDefinition): DeckSection {
+  const slot = card.metadata.slot;
+  return typeof slot === 'string' && DECK_SECTIONS.includes(slot as DeckSection) ? slot as DeckSection : 'deck';
+}
+
+export function sectionCards(deck: DeckDefinition, section: DeckSection): string[] {
+  return section === 'deck' ? deck.cards : deck.sections?.[section] ?? [];
+}
+
+export function deckWarnings(deck: DeckDefinition, catalog: readonly CardDefinition[]): string[] {
+  if (deck.moduleId !== 'frontier-skirmish') return [];
+  const byId = new Map(catalog.map(card => [card.id, card]));
+  const warnings: string[] = [];
+  const limits: Record<DeckSection, [number, number]> = {
+    legend: [1, 1], runes: [12, 12], champion: [1, 1], deck: [39, 39], sideDeck: [0, 8],
+  };
+  for (const section of DECK_SECTIONS) {
+    const cards = sectionCards(deck, section);
+    const [min, max] = limits[section];
+    if (cards.length < min) warnings.push(`${sectionLabel(section)} needs ${min - cards.length} more card${min - cards.length === 1 ? '' : 's'} (${cards.length}/${min}).`);
+    if (cards.length > max) warnings.push(`${sectionLabel(section)} has ${cards.length - max} too many cards (limit ${max}).`);
+    for (const id of cards) {
+      const card = byId.get(id);
+      if (!card || cardSection(card) !== (section === 'sideDeck' ? 'deck' : section)) warnings.push(`${sectionLabel(section)} contains an unknown or misplaced card.`);
+    }
+  }
+  const legend = byId.get(sectionCards(deck, 'legend')[0]);
+  const legendColors = legend?.metadata.affinities;
+  if (legend && (!Array.isArray(legendColors) || legendColors.length !== 2)) warnings.push('Legend must have two affinities.');
+  const allowed = new Set(Array.isArray(legendColors) ? legendColors : []);
+  if (allowed.size === 2) {
+    for (const section of DECK_SECTIONS) {
+      if (section === 'legend') continue;
+      if (sectionCards(deck, section).some(id => {
+        const colors = byId.get(id)?.metadata.affinities;
+        return !Array.isArray(colors) || colors.some(color => !allowed.has(color));
+      })) warnings.push(`${sectionLabel(section)} has cards outside the Legend's affinities.`);
+    }
+  }
+  const champion = byId.get(sectionCards(deck, 'champion')[0]);
+  if (legend && champion && champion.metadata.identity !== legend.metadata.identity)
+    warnings.push('Champion must have the same character name as the Legend.');
+  const copies = new Map<string, number>();
+  for (const id of [...deck.cards, ...sectionCards(deck, 'sideDeck')]) {
+    const count = (copies.get(id) ?? 0) + 1;
+    copies.set(id, count);
+    if (count === 4) warnings.push(`${byId.get(id)?.name ?? id} exceeds three copies across Deck and Side deck.`);
+  }
+  return warnings;
+}
+
+export function sectionLabel(section: DeckSection): string {
+  return ({ legend: 'Legend', runes: 'Runes', champion: 'Champion', deck: 'Deck', sideDeck: 'Side deck' })[section];
+}
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
@@ -41,6 +107,14 @@ export function isCardDefinition(value: unknown, module?: GameModule): value is 
       if (item.length > 32 || item.some(entry => typeof entry !== 'string' || entry.length > 80)) return false;
     } else return false;
   }
+  if (card.moduleId === 'frontier-skirmish' && 'slot' in card.metadata) {
+    const colors = card.metadata.affinities;
+    if (typeof card.metadata.slot !== 'string' || !DECK_SECTIONS.includes(card.metadata.slot as DeckSection)) return false;
+    if (!Array.isArray(colors) || colors.length < 1 || colors.length > 2 ||
+      new Set(colors).size !== colors.length || colors.some(color => !AFFINITIES.includes(color as Affinity))) return false;
+    if (card.metadata.slot === 'legend' && colors.length !== 2) return false;
+    if (['legend', 'champion'].includes(card.metadata.slot) && typeof card.metadata.identity !== 'string') return false;
+  }
   return true;
 }
 
@@ -54,10 +128,15 @@ export function isDeckDefinition(
   if (deck.schemaVersion !== 1) return false;
   if (deck.moduleId !== module.id || deck.moduleVersion !== module.version) return false;
   if (typeof deck.name !== 'string' || deck.name.length < 1 || deck.name.length > 100) return false;
-  if (!Array.isArray(deck.cards) || deck.cards.length < 1 || deck.cards.length > 500) return false;
+  if (!Array.isArray(deck.cards) || deck.cards.length > 500) return false;
 
   const allowedCards = new Set(catalog.filter(card => isCardDefinition(card, module)).map(card => card.id));
-  return deck.cards.every(cardId => typeof cardId === 'string' && allowedCards.has(cardId));
+  if (!deck.cards.every(cardId => typeof cardId === 'string' && allowedCards.has(cardId))) return false;
+  if (deck.sections === undefined) return deck.cards.length > 0;
+  if (!deck.sections || typeof deck.sections !== 'object' || Array.isArray(deck.sections)) return false;
+  return (['legend', 'runes', 'champion', 'sideDeck'] as const).every(section =>
+    Array.isArray(deck.sections?.[section]) && deck.sections[section].length <= 500 &&
+    deck.sections[section].every(id => typeof id === 'string' && allowedCards.has(id)));
 }
 
 export function searchCardCatalog(
@@ -85,17 +164,73 @@ export const builtInCardCatalog: CardDefinition[] = [
   { id: 'amber-wisp', moduleId: 'generic-duel', moduleVersion: '1.0.0', name: 'Amber Wisp', metadata: { type: 'Spirit', rules: 'Original placeholder spirit.', tags: ['starter', 'spirit'] } },
   { id: 'moon-courier', moduleId: 'generic-duel', moduleVersion: '1.0.0', name: 'Moon Courier', metadata: { type: 'Unit', rules: 'Original placeholder courier.', tags: ['starter', 'unit'] } },
 
+  // Keep the original demo cards available for older exported decks and module tests.
   { id: 'dust-runner', moduleId: 'frontier-skirmish', moduleVersion: '1.0.0', name: 'Dust Runner', metadata: { class: 'Scout', power: 2, tags: ['mobile', 'starter'] } },
   { id: 'iron-sentry', moduleId: 'frontier-skirmish', moduleVersion: '1.0.0', name: 'Iron Sentry', metadata: { class: 'Defender', power: 4, tags: ['guard', 'starter'] } },
   { id: 'ridge-captain', moduleId: 'frontier-skirmish', moduleVersion: '1.0.0', name: 'Ridge Captain', metadata: { class: 'Leader', power: 3, tags: ['leader', 'starter'] } },
   { id: 'spark-drone', moduleId: 'frontier-skirmish', moduleVersion: '1.0.0', name: 'Spark Drone', metadata: { class: 'Drone', power: 1, tags: ['drone', 'starter'] } },
+  ...frontierSamples(),
 ];
+
+function frontierSamples(): CardDefinition[] {
+  const card = (id: string, name: string, slot: DeckSection, affinities: Affinity[], extras: Record<string, CardMetadataValue> = {}): CardDefinition => ({
+    id, name, moduleId: 'frontier-skirmish', moduleVersion: '1.0.0',
+    metadata: { slot, affinities, ...extras },
+  });
+  const names: Record<Affinity, string[]> = {
+    blue: ['Tide Scout', 'Mist Cartographer', 'Harbor Sentry', 'Glass Current', 'Deepwater Signal', 'Rainward Owl', 'Azure Compass'],
+    red: ['Cinder Runner', 'Ember Smith', 'Ashen Vanguard', 'Firebreak', 'Crimson Signal', 'Sparksmith', 'Furnace Fox'],
+    green: ['Moss Guardian', 'Fern Tracker', 'Grove Keeper', 'Rootbound', 'Canopy Watch', 'Wildwood Map', 'Bramble Guide'],
+    orange: ['Dune Runner', 'Copper Sentinel', 'Sunlit Trail', 'Amber Beacon', 'Sandward', 'Rust Scout', 'Horizon Flare'],
+    yellow: ['Lantern Bearer', 'Dawn Courier', 'Golden Watch', 'Sunrise Signal', 'Meadow Guard', 'Bright Path', 'Gleam Weaver'],
+    purple: ['Dusk Scribe', 'Moon Courier', 'Violet Echo', 'Shadow Lantern', 'Nightfall Scout', 'Amethyst Ward', 'Twilight Map'],
+  };
+  const legends = [
+    card('legend-tidekeeper', 'Mira, Tidekeeper', 'legend', ['blue', 'green'], { identity: 'Mira', rules: 'Original sample legend. Choose blue and green cards.' }),
+    card('legend-emberguide', 'Orin, Emberguide', 'legend', ['red', 'orange'], { identity: 'Orin', rules: 'Original sample legend. Choose red and orange cards.' }),
+    card('legend-dawnwatch', 'Sera, Dawnwatch', 'legend', ['yellow', 'purple'], { identity: 'Sera', rules: 'Original sample legend. Choose yellow and purple cards.' }),
+  ];
+  const champions = [
+    card('champion-mira', 'Mira, Riverward', 'champion', ['blue', 'green'], { identity: 'Mira', rules: 'Original sample champion.' }),
+    card('champion-orin', 'Orin, Trailblazer', 'champion', ['red', 'orange'], { identity: 'Orin', rules: 'Original sample champion.' }),
+    card('champion-sera', 'Sera, Starlight', 'champion', ['yellow', 'purple'], { identity: 'Sera', rules: 'Original sample champion.' }),
+  ];
+  const runes = AFFINITIES.map(color => card(`rune-${color}`, `${color[0].toUpperCase()}${color.slice(1)} Rune`, 'runes', [color], { rules: 'Basic sample rune · no artwork.' }));
+  const main = AFFINITIES.flatMap(color => names[color].map((name, index) =>
+    card(`${color}-${index + 1}`, name, 'deck', [color], { class: index % 3 === 0 ? 'Unit' : 'Spell', power: index % 5 + 1 })));
+  const mixed = [
+    card('river-canopy', 'River Canopy', 'deck', ['blue', 'green'], { class: 'Spell', power: 2 }),
+    card('ember-dune', 'Ember Dune', 'deck', ['red', 'orange'], { class: 'Spell', power: 2 }),
+    card('dusk-dawn', 'Dusk and Dawn', 'deck', ['yellow', 'purple'], { class: 'Spell', power: 2 }),
+  ];
+  return [...legends, ...champions, ...runes, ...main, ...mixed];
+}
 
 export function starterDeckForModule(
   module: GameModule,
   catalog: readonly CardDefinition[] = builtInCardCatalog,
 ): DeckDefinition {
   const ids = catalog.filter(card => card.moduleId === module.id && card.moduleVersion === module.version).map(card => card.id);
+  if (module.id === 'frontier-skirmish') {
+  const byId = new Map(catalog.filter(card => isCardDefinition(card)).map(card => [card.id, card]));
+    const compatible = ids.filter(id => {
+      const card = byId.get(id)!;
+      return cardSection(card) === 'deck' &&
+        Array.isArray(card.metadata.affinities) &&
+        card.metadata.affinities.every(color => color === 'blue' || color === 'green');
+    });
+    return {
+      schemaVersion: 1, moduleId: module.id, moduleVersion: module.version,
+      name: `${module.name} Starter`,
+      cards: compatible.slice(0, 13).flatMap(id => [id, id, id]),
+      sections: {
+        legend: ids.includes('legend-tidekeeper') ? ['legend-tidekeeper'] : [],
+        champion: ids.includes('champion-mira') ? ['champion-mira'] : [],
+        runes: Array.from({ length: 6 }, () => ['rune-blue', 'rune-green']).flat().filter(id => ids.includes(id)),
+        sideDeck: [],
+      },
+    };
+  }
   return {
     schemaVersion: 1,
     moduleId: module.id,

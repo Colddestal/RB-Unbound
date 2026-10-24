@@ -17,6 +17,7 @@ import {
   createTableSaveFile,
   defaultGameModule,
   pileCapabilities,
+  sectionCards,
   zoneBehavior,
   isTableSaveFile,
   migrateTableState,
@@ -39,7 +40,12 @@ function shuffled<T>(items: T[]): T[] {
   return copy;
 }
 
-export function Table({ bindings, modulePackages }: { bindings: KeyBindings; modulePackages: ModulePackage[] }) {
+export function Table({ bindings, modulePackages, showEditor = false, onOpenTable }: {
+  bindings: KeyBindings;
+  modulePackages: ModulePackage[];
+  showEditor?: boolean;
+  onOpenTable?: () => void;
+}) {
   const defaultPackage = modulePackages.find(bundle => bundle.module.id === defaultGameModule.id) ??
     builtInModulePackages.find(bundle => bundle.module.id === defaultGameModule.id) ??
     builtInModulePackages[0];
@@ -236,32 +242,44 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       return;
     }
     const catalog = new Map(activePackage.cards.map(card => [card.id, card]));
-    const cards = deck.cards.map((definitionId, index) => {
+    const createCards = (ids: string[], zone: string, faceUp = false) => ids.map((definitionId, index) => {
       const definition = catalog.get(definitionId);
       if (!definition) return null;
       return {
-        id: `p${player}-deck-${crypto.randomUUID()}`,
+        id: `p${player}-${zone}-${crypto.randomUUID()}`,
         definitionId,
         label: definition.name,
         owner: player as PlayerId,
-        zone: 'deck',
+        zone,
         order: index,
         x: 0,
         y: 0,
         rotation: 0,
-        faceUp: false,
+        faceUp,
       };
     }).filter((card): card is NonNullable<typeof card> => Boolean(card));
+    const cards = [
+      ...createCards(deck.cards, 'deck'),
+      ...(deck.sections ? [
+        ...createCards(sectionCards(deck, 'legend'), 'commander', true),
+        ...createCards(sectionCards(deck, 'champion'), 'vanguard', true),
+        ...createCards(sectionCards(deck, 'runes'), 'resource-deck'),
+        ...createCards(sectionCards(deck, 'sideDeck'), 'side-deck'),
+      ] : []),
+    ];
+    const replacedZones = new Set(deck.sections
+      ? ['deck', 'commander', 'vanguard', 'resource-deck', 'side-deck'] : ['deck']);
 
     setTable(state => ({
       ...state,
-      cards: [...state.cards.filter(card => card.owner !== player || card.zone !== 'deck'), ...cards],
+      cards: [...state.cards.filter(card => card.owner !== player || !replacedZones.has(card.zone)), ...cards],
     }));
     setSelected('');
     setMultiSelected([]);
     setPinned('');
     setError('');
     addLocalHistory(`Loaded ${deck.name} for Player ${player}.`);
+    onOpenTable?.();
   };
 
   const targets = selectedCards.length ? selectedCards : (selectedCard ? [selectedCard] : []);
@@ -712,6 +730,15 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       <a href="https://github.com/Colddestal/RB-Unbound" target="_blank" rel="noreferrer">View GitHub ↗</a>
     </header>
 
+    {showEditor ? <>
+      <label className="deck-module-picker">Module
+        <select value={modulePackageKey(activeModule)} onChange={event => selectModule(event.target.value)}>
+          {modulePackages.map(bundle => <option key={modulePackageKey(bundle.module)} value={modulePackageKey(bundle.module)}>{bundle.module.name}</option>)}
+        </select>
+      </label>
+      <DeckTools key={modulePackageKey(activeModule)} module={activeModule} catalog={activePackage.cards} onLoadDeck={loadDeckForPlayer} />
+    </> : <>
+
     <section className="viewer-bar">
       <strong>Local pass-and-play · Turn {turnNumber}</strong>
       <label className="module-picker">Module
@@ -913,10 +940,9 @@ export function Table({ bindings, modulePackages }: { bindings: KeyBindings; mod
       onClose={() => setCardContext(null)}
     />}
 
-    <DeckTools key={modulePackageKey(activeModule)} module={activeModule} catalog={activePackage.cards} onLoadDeck={loadDeckForPlayer} />
-
     <footer>
       {activeModule.description} · Draw from your {zoneLabel('deck').toLowerCase()} · Double-click a {zoneLabel('hand').toLowerCase()} card to play it · Drag your {zoneLabel('field').toLowerCase()} cards.
     </footer>
+    </>}
   </div>;
 }

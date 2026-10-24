@@ -27,7 +27,7 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL shown in the terminal. Local play supports manual card movement, turns, and JSON table export/import. The Deck Editor below the table lets you name a deck, add/remove cards from the selected module's catalog, save separate local drafts for Players 1 and 2, import/export deck JSON, and load a deck into either player's Main Deck. Drafts are saved in that browser; export a copy before clearing browser data. The browser demo hosts local play, while multiplayer requires a running development server.
+Open the Vite URL shown in the terminal. Local play supports manual card movement, turns, and JSON table export/import. Choose the separate **Deck editor** tab to build with original sample cards. The Full Mat Prototype editor has Legend, Runes, Champion, Deck, and Side deck sections, affinity and character-name checks, counts, and actionable warnings. A sample starter uses 1 dual-affinity Legend, 12 Runes, 1 matching Champion, 39 other main cards, and up to 8 optional side cards. These are prototype limits, not official Riftbound deck validation. You can export an unfinished draft, import an app-generated JSON deck, and load a valid draft onto the local table's matching piles. Each player has a separate browser-saved draft; export a copy before clearing browser data. The browser demo hosts local play, while multiplayer requires a running development server.
 
 The built-in catalog still contains original placeholder cards. Official Riftbound cards and art require Riot-approved app-specific API access; the generic editor is ready for an authorized catalog but does not ship one.
 

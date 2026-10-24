@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   builtInCardCatalog,
+  deckWarnings,
   genericDuelModule,
   frontierSkirmishModule,
   isCardDefinition,
@@ -34,7 +35,18 @@ describe('game-neutral cards and decks', () => {
   });
 
   it('searches names and metadata', () => {
-    expect(searchCardCatalog(builtInCardCatalog, frontierSkirmishModule, 'leader').map(card => card.id)).toContain('ridge-captain');
+    expect(searchCardCatalog(builtInCardCatalog, frontierSkirmishModule, 'tidekeeper').map(card => card.id)).toContain('legend-tidekeeper');
     expect(searchCardCatalog(builtInCardCatalog, genericDuelModule, 'spirit').map(card => card.id)).toContain('amber-wisp');
+  });
+
+  it('warns for a fourth copy shared across main and side, and enforces dual-affinity legends', () => {
+    const starter = starterDeckForModule(frontierSkirmishModule);
+    expect(deckWarnings(starter, builtInCardCatalog)).toEqual([]);
+    const fourth = { ...starter, sections: { ...starter.sections!, sideDeck: [starter.cards[0]] } };
+    expect(deckWarnings(fourth, builtInCardCatalog).join(' ')).toMatch(/exceeds three copies/);
+    expect(isCardDefinition({
+      ...builtInCardCatalog.find(card => card.id === 'legend-tidekeeper')!,
+      metadata: { slot: 'legend', identity: 'Mira', affinities: ['blue', 'green', 'purple'] },
+    }, frontierSkirmishModule)).toBe(false);
   });
 });
