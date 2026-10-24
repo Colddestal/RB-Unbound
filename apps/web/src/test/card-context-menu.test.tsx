@@ -70,4 +70,28 @@ describe('CardContextMenu', () => {
     expect(screen.queryByRole('button', { name: 'Tap' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Return to Hand' })).not.toBeInTheDocument();
   });
+
+  it('lets the controller stack a card from its context menu', () => {
+    const onStack = vi.fn();
+    render(<CardContextMenu
+      state={{ cardId: card.id, x: 100, y: 100 }}
+      card={card}
+      canAct
+      zones={zones}
+      handZoneId="hand"
+      discardZoneId="discard"
+      deckZoneId="deck"
+      onInspect={() => undefined}
+      onRotate={() => undefined}
+      onFlip={() => undefined}
+      onMove={() => undefined}
+      stackTargets={[{ id: 'card-2', label: 'Another Card' }]}
+      onStack={onStack}
+      onUnstack={() => undefined}
+      onClose={() => undefined}
+    />);
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Stack on card' }), { target: { value: 'card-2' } });
+    expect(onStack).toHaveBeenCalledWith('card-2');
+  });
 });

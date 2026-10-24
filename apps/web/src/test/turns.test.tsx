@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { endTurn, initialTurn } from '@rb-unbound/lobby';
 import { builtInModulePackages } from '@rb-unbound/tabletop';
 import { Table } from '../table';
@@ -20,6 +20,12 @@ describe('manual turns', () => {
 
   it('requires confirmation before switching the local board perspective', () => {
     render(<Table bindings={DEFAULT_BINDINGS} modulePackages={builtInModulePackages} />);
+    const board = screen.getByLabelText('RB Unbound tabletop board');
+    const turnControls = within(board).getByRole('group', { name: 'Turn controls' });
+    const shortcuts = screen.getByRole('region', { name: 'Keyboard shortcuts' });
+    expect(within(turnControls).getByRole('button', { name: 'End Turn' })).toBeInTheDocument();
+    expect(board.compareDocumentPosition(shortcuts) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Export table' })).not.toBeInTheDocument();
     expect(screen.getByText(/Player 1's turn/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'End Turn' }));
     expect(screen.getByText(/Player 1's turn/)).toBeInTheDocument();

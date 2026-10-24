@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { io, type Socket } from 'socket.io-client';
 import { TabletopDock } from './tabletop-dock';
 import { DeckPile } from './deck-pile';
+import { DuelTurnControl } from './duel-turn-control';
 import { ResizableDockColumn } from './resizable-dock-column';
 import { CardContextMenu, type CardContextState } from './card-context-menu';
 import { pointInRect } from './drag-drop';
@@ -625,7 +626,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
       <div className="turn-ring" aria-hidden="true">{isMyTurn ? '●' : '○'}</div>
       <div><strong>{isMyTurn ? 'Your turn' : `Seat ${match.turn.seat}${activeSeat?.displayName ? ` · ${activeSeat.displayName}` : ''}'s turn`}</strong>
         <span>Turn {match.turn.number} · {identity?.spectator ? 'Spectating' : isMyTurn ? 'End your turn when you are ready.' : 'Waiting for the active player.'}</span></div>
-      {!identity?.spectator && (confirmEndTurn ? <div className="turn-actions">
+      {!identity?.spectator && room.settings.format !== '1v1' && (confirmEndTurn ? <div className="turn-actions">
         <span>Lock in your end turn?</span>
         <button className="primary" disabled={!connected || !isMyTurn} onClick={() => {
           socket?.emit('match:end-turn', { expectedTurn: match.turn.number });
@@ -669,7 +670,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
       </ResizableDockColumn>
 
       <main className="match-main">
-        {!identity?.spectator && <section className="shortcut-bar compact" aria-label="Keyboard shortcuts">
+        {!identity?.spectator && room.settings.format !== '1v1' && <section className="shortcut-bar compact" aria-label="Keyboard shortcuts">
           <strong>Keyboard</strong>
           <kbd>R</kbd><span>Rotate</span>
           <kbd>F</kbd><span>Flip</span>
@@ -680,7 +681,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           <kbd>Esc</kbd><span>Clear</span>
         </section>}
 
-        {!identity?.spectator && <section className="toolbar">
+        {!identity?.spectator && room.settings.format !== '1v1' && <section className="toolbar">
           <strong>{selectedCards.length ? `${selectedCards.length} cards selected` : selectedCard ? (selectedCard.label ?? 'Hidden card') : 'Select one of your cards'}</strong>
           <button disabled={!canControlSelected} onClick={() => { const targets = selectedCards.length ? selectedCards : (selectedCard ? [selectedCard] : []); for (const card of targets) emitAction({ type: 'rotate', id: card.id }); }}>Rotate</button>
           <button disabled={!canControlSelected} onClick={() => { const targets = selectedCards.length ? selectedCards : (selectedCard ? [selectedCard] : []); for (const card of targets) emitAction({ type: 'flip', id: card.id }); }}>Flip</button>
@@ -897,7 +898,29 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
             <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span><span>{card.label ?? 'Hidden card'}</span><small>P{card.owner} · {zoneLabel('discard')}</small>
           </button>;
           })}
+          {room.settings.format === '1v1' && !identity?.spectator && <DuelTurnControl
+            status={`Turn ${match.turn.number} · ${isMyTurn ? 'Your turn' : `Seat ${match.turn.seat}'s turn`}`}
+            confirming={confirmEndTurn}
+            disabled={!connected || !isMyTurn}
+            onBegin={() => setConfirmEndTurn(true)}
+            onCancel={() => setConfirmEndTurn(false)}
+            onConfirm={() => {
+              socket?.emit('match:end-turn', { expectedTurn: match.turn.number });
+              setConfirmEndTurn(false);
+            }}
+          />}
         </div>
+
+        {!identity?.spectator && room.settings.format === '1v1' && <section className="shortcut-bar compact" aria-label="Keyboard shortcuts">
+          <strong>Keyboard</strong>
+          <kbd>R</kbd><span>Rotate</span>
+          <kbd>F</kbd><span>Flip</span>
+          <kbd>P</kbd><span>Field</span>
+          <kbd>H</kbd><span>Hand</span>
+          <kbd>Del</kbd><span>Discard</span>
+          <kbd>{displayKey(bindings.moveUp)}{displayKey(bindings.moveLeft)}{displayKey(bindings.moveDown)}{displayKey(bindings.moveRight)}</kbd><span>Nudge</span>
+          <kbd>Esc</kbd><span>Clear</span>
+        </section>}
 
         {!identity?.spectator && <section ref={handStripRef} className={`hand-strip ${fieldDragId ? 'hand-drop-active' : ''}`}>
           <strong>Your hand</strong>
@@ -975,6 +998,11 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           onRotate={rotateContextCard}
           onFlip={flipContextCard}
           onMove={moveContextCard}
+          stackTargets={movableZoneSet.has(contextCard.zone) ? match.table.cards.filter(card =>
+            card.owner === identity?.seat && card.id !== contextCard.id &&
+            movableZoneSet.has(card.zone) && zoneGroupFor(card.zone) === zoneGroupFor(contextCard.zone))
+            .map(card => ({ id: card.id, label: card.label ?? 'Card' })) : []}
+          onStack={targetId => { if (canActOnContextCard) emitAction({ type: 'stack', id: contextCard.id, targetId }); }}
           onUnstack={unstackContextCard}
           onClose={() => setCardContext(null)}
         />}

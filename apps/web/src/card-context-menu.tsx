@@ -24,6 +24,8 @@ export function CardContextMenu({
   onRotate,
   onFlip,
   onMove,
+  stackTargets = [],
+  onStack,
   onUnstack,
   onClose,
 }: {
@@ -38,6 +40,8 @@ export function CardContextMenu({
   onRotate: () => void;
   onFlip: () => void;
   onMove: (zoneId: string) => void;
+  stackTargets?: readonly { id: string; label: string }[];
+  onStack?: (targetId: string) => void;
   onUnstack: () => void;
   onClose: () => void;
 }) {
@@ -99,6 +103,13 @@ export function CardContextMenu({
         <button type="button" onClick={() => act(() => onMove(deckZoneId))}>Move to {zones.find(zone => zone.id === deckZoneId)?.label ?? 'Deck'}</button>}
       {card.stackOn &&
         <button type="button" onClick={() => act(onUnstack)}>Unstack</button>}
+      {onStack && stackTargets.length > 0 && <select aria-label="Stack on card" defaultValue="" onChange={event => {
+        const targetId = event.currentTarget.value;
+        if (targetId) act(() => onStack(targetId));
+      }}>
+        <option value="">Stack on…</option>
+        {stackTargets.map(target => <option key={target.id} value={target.id}>{target.label}</option>)}
+      </select>}
 
       {moveZones.length > 0 && <>
         <div className="card-context-separator" />

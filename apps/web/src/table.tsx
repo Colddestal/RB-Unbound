@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEve
 import { TabletopDock, type DockHistoryEntry } from './tabletop-dock';
 import { DeckTools } from './deck-tools';
 import { DeckPile } from './deck-pile';
+import { DuelTurnControl } from './duel-turn-control';
 import { ResizableDockColumn } from './resizable-dock-column';
 import { CardContextMenu, type CardContextState } from './card-context-menu';
 import { localHandDropRect, pointInRect } from './drag-drop';
@@ -14,13 +15,10 @@ import {
   canManipulate,
   builtInModulePackages,
   createInitialTableForModule,
-  createTableSaveFile,
   defaultGameModule,
   pileCapabilities,
   sectionCards,
   zoneBehavior,
-  isTableSaveFile,
-  migrateTableState,
   modulePackageKey,
   type Card,
   type DeckDefinition,
@@ -91,14 +89,12 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
   const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
   const [hovered, setHovered] = useState<string>('');
   const [pinned, setPinned] = useState<string>('');
-  const [stackTarget, setStackTarget] = useState<string>('');
   const [error, setError] = useState('');
   const [history, setHistory] = useState<DockHistoryEntry[]>([]);
   const [dragPreview, setDragPreview] = useState<{ id: string; label: string; x: number; y: number } | null>(null);
   const [fieldDragId, setFieldDragId] = useState('');
   const [cardContext, setCardContext] = useState<CardContextState | null>(null);
   const historyCounterRef = useRef(0);
-  const fileRef = useRef<HTMLInputElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
   const handDragRef = useRef<{ id: string; startX: number; startY: number } | null>(null);
 
@@ -145,14 +141,14 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
   const selectedCards = table.cards.filter(card => multiSelected.includes(card.id));
   const inspectorCard = table.cards.find(card => card.id === (hovered || pinned));
   const inspectorPinned = Boolean(pinned && !hovered);
-  const ownStackCards = selectedCard
+  const contextCard = cardContext ? table.cards.find(card => card.id === cardContext.cardId) : undefined;
+  const contextStackTargets = contextCard
     ? table.cards.filter(card =>
       card.owner === viewer &&
-      card.id !== selectedCard.id &&
+      card.id !== contextCard.id &&
       movableZoneSet.has(card.zone) &&
-      zoneGroupFor(card.zone) === zoneGroupFor(selectedCard.zone))
+      zoneGroupFor(card.zone) === zoneGroupFor(contextCard.zone))
     : [];
-  const contextCard = cardContext ? table.cards.find(card => card.id === cardContext.cardId) : undefined;
   const draggedCard = fieldDragId ? table.cards.find(card => card.id === fieldDragId) : undefined;
   const draggedGroup = draggedCard ? zoneGroupFor(draggedCard.zone) : undefined;
   const handZoneId = activeModule.zones.find(zone => zone.kind === 'hand')?.id;
@@ -166,46 +162,6 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
     1: table.cards.filter(card => card.owner === 1),
     2: table.cards.filter(card => card.owner === 2),
   }), [table.cards]);
-
-  const save = () => {
-    const saveFile = createTableSaveFile(table, activeModule);
-    const url = URL.createObjectURL(new Blob([JSON.stringify(saveFile, null, 2)], { type: 'application/json' }));
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `rb-unbound-${activeModule.id}-table.json`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const load = async (file?: File) => {
-    if (!file) return;
-    try {
-      if (file.size > 250_000) throw Error('File too large');
-      const parsed: unknown = JSON.parse(await file.text());
-      if (isTableSaveFile(parsed)) {
-        const required = modulePackages.find(bundle =>
-          bundle.module.id === parsed.moduleId && bundle.module.version === parsed.moduleVersion);
-        if (!required) {
-          setError(`This table requires ${parsed.moduleId} v${parsed.moduleVersion}, which is not installed.`);
-          return;
-        }
-        setModuleKey(modulePackageKey(required.module));
-        setTable(migrateTableState(parsed.table) ?? parsed.table);
-      } else {
-        const migrated = migrateTableState(parsed);
-        if (!migrated) throw Error('Invalid table file');
-        setTable(migrated);
-      }
-      setSelected('');
-      setStackTarget('');
-      setViewer(1);
-      setTurnNumber(1);
-      setConfirmEndTurn(false);
-      setError('');
-    } catch {
-      setError('Could not load this table file. Current saves and legacy v3/v4 table files are supported.');
-    }
-  };
 
   const drawCards = (player: PlayerId, count: number, fromZone = 'deck') => {
     const sourceZone = activeModule.zones.find(zone => zone.id === fromZone);
@@ -299,7 +255,6 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
     if (ownedTargets.length) {
       addLocalHistory(`Player ${viewer} moved ${ownedTargets.length === 1 ? 'a card' : `${ownedTargets.length} cards`} to ${zoneLabel(zone)}.`);
     }
-    if (!movableZoneSet.has(zone)) setStackTarget('');
   };
 
   const rotateTargets = () => {
@@ -312,18 +267,6 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
     const ownedTargets = targets.filter(card => card.owner === viewer);
     for (const card of ownedTargets) execute({ type: 'flip', id: card.id, actor: viewer });
     if (ownedTargets.length) addLocalHistory(`Player ${viewer} flipped ${ownedTargets.length === 1 ? 'a card' : `${ownedTargets.length} cards`}.`);
-  };
-
-  const stackSelected = () => {
-    if (!selectedCard || !stackTarget || !movableZoneSet.has(selectedCard.zone)) return;
-    execute({ type: 'stack', id: selectedCard.id, targetId: stackTarget, actor: viewer });
-    addLocalHistory(`Player ${viewer} stacked ${selectedCard.label}.`);
-  };
-
-  const unstackSelected = () => {
-    if (!selectedCard?.stackOn) return;
-    execute({ type: 'unstack', id: selectedCard.id, actor: viewer });
-    addLocalHistory(`Player ${viewer} unstacked ${selectedCard.label}.`);
   };
 
   const openCardContext = (event: ReactMouseEvent, card: Card) => {
@@ -358,6 +301,12 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
     addLocalHistory(`Player ${viewer} unstacked a card.`);
   };
 
+  const stackContextCard = (targetId: string) => {
+    if (!contextCard || contextCard.owner !== viewer || !movableZoneSet.has(contextCard.zone)) return;
+    execute({ type: 'stack', id: contextCard.id, targetId, actor: viewer });
+    addLocalHistory(`Player ${viewer} stacked ${contextCard.label}.`);
+  };
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -369,7 +318,6 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
         setSelected('');
         setMultiSelected([]);
         setPinned('');
-        setStackTarget('');
         event.preventDefault();
         return;
       }
@@ -564,7 +512,6 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
     setSelected('');
     setMultiSelected([]);
     setPinned('');
-    setStackTarget('');
     setHistory([]);
     setError('');
   };
@@ -739,88 +686,6 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
       <DeckTools key={modulePackageKey(activeModule)} module={activeModule} catalog={activePackage.cards} onLoadDeck={loadDeckForPlayer} />
     </> : <>
 
-    <section className="viewer-bar">
-      <strong>Local pass-and-play · Turn {turnNumber}</strong>
-      <label className="module-picker">Module
-        <select value={modulePackageKey(activeModule)} onChange={e => selectModule(e.target.value)}>
-          {modulePackages.map(bundle => {
-            const module: GameModule = bundle.module;
-            return <option key={modulePackageKey(module)} value={modulePackageKey(module)}>{module.name} · v{module.version}</option>;
-          })}
-        </select>
-      </label>
-      <span className="turn-indicator" role="status">Player {viewer}'s turn · Player {viewer} at the bottom</span>
-      {confirmEndTurn ? <>
-        <span className="muted">Pass the table to Player {viewer === 1 ? 2 : 1}?</span>
-        <button className="primary" onClick={() => {
-          const next = viewer === 1 ? 2 : 1;
-          addLocalHistory(`Player ${viewer} ended their turn. Player ${next} is up.`);
-          setViewer(next);
-          setTurnNumber(number => number + 1);
-          setSelected('');
-          setMultiSelected([]);
-          setHovered('');
-          setPinned('');
-          setStackTarget('');
-          setCardContext(null);
-          setConfirmEndTurn(false);
-        }}>Confirm end turn</button>
-        <button onClick={() => setConfirmEndTurn(false)}>Cancel</button>
-      </> : <button className="primary" onClick={() => setConfirmEndTurn(true)}>End Turn</button>}
-      <span className="chip">Opponent hand stays hidden</span>
-      <span className="chip">PC controls enabled</span>
-      <span className="chip">{activeModule.name} · {cardBack.label}</span>
-    </section>
-
-    <section className="toolbar">
-      <strong>{selectedCards.length ? `${selectedCards.length} cards selected` : selectedCard ? `Selected: ${selectedCard.owner === viewer ? selectedCard.label : 'Opponent card'}` : 'Select one of your cards'}</strong>
-      <button disabled={!targets.length} onClick={rotateTargets}>Rotate</button>
-      <button disabled={!targets.length} onClick={flipTargets}>Flip</button>
-      <button disabled={!targets.length} onClick={() => moveTargets('hand')}>To {zoneLabel('hand')}</button>
-      <button disabled={!targets.length} onClick={() => moveTargets('field')}>To {zoneLabel('field')}</button>
-      <button disabled={!targets.length} onClick={() => moveTargets('discard')}>{zoneLabel('discard')}</button>
-      <button disabled={!targets.length} onClick={() => moveTargets('deck')}>To {zoneLabel('deck')}</button>
-      {activeModule.zones.filter(zone => zone.kind === 'custom').map(zone =>
-        <button key={zone.id} disabled={!targets.length} onClick={() => moveTargets(zone.id)}>To {zone.label}</button>
-      )}
-      <select value={stackTarget} onChange={e => setStackTarget(e.target.value)} disabled={!selectedCard || !movableZoneSet.has(selectedCard.zone)}>
-        <option value="">Stack target…</option>
-        {ownStackCards.map(card => <option key={card.id} value={card.id}>{card.label}</option>)}
-      </select>
-      <button disabled={!selectedCard || !stackTarget || !movableZoneSet.has(selectedCard.zone)} onClick={stackSelected}>Stack</button>
-      <button disabled={!selectedCard?.stackOn} onClick={unstackSelected}>Unstack</button>
-    </section>
-
-    <section className="shortcut-bar" aria-label="Keyboard shortcuts">
-      <strong>Keyboard</strong>
-      <kbd>R</kbd><span>Rotate</span>
-      <kbd>F</kbd><span>Flip</span>
-      <kbd>P</kbd><span>Play / field</span>
-      <kbd>H</kbd><span>Hand</span>
-      <kbd>Del</kbd><span>Discard</span>
-      <kbd>{displayKey(bindings.moveUp)}{displayKey(bindings.moveLeft)}{displayKey(bindings.moveDown)}{displayKey(bindings.moveRight)}</kbd><span>Nudge</span>
-      <kbd>Shift + movement</kbd><span>Large nudge</span>
-      <kbd>Esc</kbd><span>Clear</span>
-    </section>
-
-    <section className="filebar">
-      <button onClick={save}>Export table</button>
-      <button onClick={() => fileRef.current?.click()}>Import table</button>
-      <button onClick={() => {
-        setTable(createInitialTableForModule([1, 2], activeModule, activePackage.cards));
-        setViewer(1);
-        setTurnNumber(1);
-        setConfirmEndTurn(false);
-        setSelected('');
-        setMultiSelected([]);
-        setPinned('');
-        setStackTarget('');
-        addLocalHistory('Reset the local table.');
-      }}>Reset</button>
-      <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={e => { void load(e.target.files?.[0]); e.target.value = ''; }} />
-      <span className="chip">Manual rules · Local sandbox</span>
-    </section>
-
     {error && <p className="error" role="alert">{error}</p>}
 
     <div className="play-area">
@@ -912,7 +777,36 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
         }} />}
         {renderPlayer(2)}
         {renderPlayer(1)}
+        <DuelTurnControl
+          status={`Player ${viewer}'s turn · Turn ${turnNumber}`}
+          confirming={confirmEndTurn}
+          onBegin={() => setConfirmEndTurn(true)}
+          onCancel={() => setConfirmEndTurn(false)}
+          onConfirm={() => {
+            const next = viewer === 1 ? 2 : 1;
+            addLocalHistory(`Player ${viewer} ended their turn. Player ${next} is up.`);
+            setViewer(next);
+            setTurnNumber(number => number + 1);
+            setSelected('');
+            setMultiSelected([]);
+            setHovered('');
+            setPinned('');
+            setCardContext(null);
+            setConfirmEndTurn(false);
+          }}
+        />
       </div>
+      <section className="shortcut-bar below-board-shortcuts" aria-label="Keyboard shortcuts">
+        <strong>Keyboard</strong>
+        <kbd>R</kbd><span>Rotate</span>
+        <kbd>F</kbd><span>Flip</span>
+        <kbd>P</kbd><span>Play / field</span>
+        <kbd>H</kbd><span>Hand</span>
+        <kbd>Del</kbd><span>Discard</span>
+        <kbd>{displayKey(bindings.moveUp)}{displayKey(bindings.moveLeft)}{displayKey(bindings.moveDown)}{displayKey(bindings.moveRight)}</kbd><span>Nudge</span>
+        <kbd>Shift + movement</kbd><span>Large nudge</span>
+        <kbd>Esc</kbd><span>Clear</span>
+      </section>
     </div>
 
     {dragPreview && <div
@@ -936,6 +830,8 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
       onRotate={rotateContextCard}
       onFlip={flipContextCard}
       onMove={moveContextCard}
+      stackTargets={movableZoneSet.has(contextCard.zone) ? contextStackTargets.map(card => ({ id: card.id, label: card.label })) : []}
+      onStack={stackContextCard}
       onUnstack={unstackContextCard}
       onClose={() => setCardContext(null)}
     />}
