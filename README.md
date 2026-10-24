@@ -37,6 +37,28 @@ To run the multiplayer development server in another terminal:
 npm run dev:server
 ```
 
+## Host a temporary test site from a Windows desktop
+
+The desktop can serve the built website and multiplayer rooms from one address. This is separate from the GitHub Pages demo URL. In **Command Prompt** (copy commands only, without the `C:\...>` prompt):
+
+```cmd
+cd /d "C:\Users\willi\Documents\GitHub\RB-Unbound"
+npm ci --include=optional
+npm run host:site
+```
+
+The first command assumes that is where GitHub Desktop checked out the repository. After later pulls, `npm ci` is only needed if dependencies changed. Leave this window open and test `http://127.0.0.1:3001/` on the host desktop.
+
+For friends outside the home network, install [Cloudflare's Windows cloudflared](https://developers.cloudflare.com/tunnel/downloads/). In a **second** Command Prompt, run:
+
+```cmd
+cloudflared tunnel --url http://127.0.0.1:3001
+```
+
+Open the temporary `https://...trycloudflare.com` address printed by cloudflared. Share **that address** with players; the site and multiplayer socket use the same secure origin. Keep both windows open and the computer awake. This test URL changes each time the tunnel restarts, and anyone with the link can reach the test site. No router port forwarding or inbound Windows Firewall rule is needed. Stop sharing by pressing Ctrl+C in the tunnel window.
+
+This is a temporary alpha test, not an always-on public deployment. Match snapshots are stored locally on the desktop. The GitHub Pages demo continues to host only local play and does not connect to this temporary tunnel.
+
 ## Structure
 
 - `apps/web` — React + TypeScript interface and manual tabletop prototype

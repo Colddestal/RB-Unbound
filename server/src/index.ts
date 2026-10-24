@@ -1,5 +1,7 @@
 import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer } from 'node:http';
+import { readFile, stat } from 'node:fs/promises';
+import { extname, relative, resolve, sep } from 'node:path';
 import { Server, type Socket } from 'socket.io';
 import {
   addSpectator,
@@ -103,14 +105,56 @@ const EVENT_MAX_BYTES: Record<string, number> = {
   'match:action': 2048,
 };
 
-const httpServer = createServer((req, res) => {
+const siteRoot = resolve(process.cwd(), 'apps/web/dist');
+const mimeTypes: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+};
+
+const httpServer = createServer(async (req, res) => {
   if (req.url === '/healthz' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify({ status: 'ok', commit: process.env.RB_UNBOUND_RELEASE_SHA ?? 'development' }));
     return;
   }
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ service: 'RB Unbound multiplayer', status: 'development' }));
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.writeHead(405).end();
+    return;
+  }
+  let pathname: string;
+  try {
+    pathname = decodeURIComponent(new URL(req.url ?? '/', 'http://localhost').pathname);
+  } catch {
+    res.writeHead(400).end();
+    return;
+  }
+  const filename = pathname === '/' ? 'index.html' : pathname.slice(1);
+  const filePath = resolve(siteRoot, filename);
+  const pathFromRoot = relative(siteRoot, filePath);
+  if (!pathFromRoot || pathFromRoot === '..' || pathFromRoot.startsWith(`..${sep}`) || pathname.includes('\\') || filename.split('/').some(part => part.startsWith('.'))) {
+    res.writeHead(404).end();
+    return;
+  }
+  try {
+    if (!(await stat(filePath)).isFile()) throw new Error('Not a file');
+    const content = await readFile(filePath);
+    res.writeHead(200, {
+      'Content-Type': mimeTypes[extname(filePath)] ?? 'application/octet-stream',
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': filename === 'index.html' ? 'no-cache' : 'public, max-age=3600',
+    });
+    res.end(req.method === 'HEAD' ? undefined : content);
+  } catch {
+    res.writeHead(404).end();
+  }
 });
 
 const io = new Server(httpServer, {
@@ -1001,5 +1045,5 @@ process.once('SIGTERM', () => { void shutdown('SIGTERM'); });
 await restoreState();
 
 httpServer.listen(3001, '127.0.0.1', () => {
-  console.log(`RB Unbound development multiplayer server on http://127.0.0.1:3001 (snapshot: ${snapshotPath()})`);
+  console.log(`RB Unbound site and multiplayer server on http://127.0.0.1:3001 (snapshot: ${snapshotPath()})`);
 });

@@ -78,7 +78,9 @@ type RoomSnapshot = {
 type Identity = { code: string; seat?: PlayerId; spectator: boolean };
 type MatchSnapshot = { seat?: PlayerId; spectator: boolean; revision: number; turn: { seat: PlayerId; number: number }; table: TableView };
 
-const SERVER_URL = 'http://127.0.0.1:3001';
+// The desktop-hosted site serves the UI and Socket.IO from the same origin.
+// Vite still uses the separate local server during development.
+const SERVER_URL = import.meta.env.DEV ? 'http://127.0.0.1:3001' : window.location.origin;
 
 export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBindings; modulePackages: ModulePackage[] }) {
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -126,7 +128,9 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
       if (token) client.emit('session:resume', { token });
     });
     client.on('disconnect', () => setConnected(false));
-    client.on('connect_error', () => setError('Could not reach the local multiplayer server. Run npm run dev:server in another terminal.'));
+    client.on('connect_error', () => setError(import.meta.env.DEV
+      ? 'Could not reach the local multiplayer server. Run npm run dev:server in another terminal.'
+      : 'Could not reach the multiplayer server. Check that the desktop host is running.'));
     client.on('room:error', (payload: { message?: string }) => setError(payload.message ?? 'Room error.'));
     client.on('abuse:warning', (payload: { reason?: string }) => {
       setError(payload.reason === 'payload-too-large'
