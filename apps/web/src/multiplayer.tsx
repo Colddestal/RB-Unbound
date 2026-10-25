@@ -7,7 +7,7 @@ import { ResizableDockColumn } from './resizable-dock-column';
 import { CardContextMenu, type CardContextState } from './card-context-menu';
 import { pointInRect } from './drag-drop';
 import { toCanonicalPoint, toViewerPoint, toViewerSeat } from './board-perspective';
-import { actionForCode, displayKey, type KeyBindings } from './controls';
+import { actionForCode, displayKey, historyDirectionForKey, type KeyBindings } from './controls';
 import { automaticZoneCardPoint, orderZoneCards, runeColor } from './zone-card-layout';
 import { spatialDropZone } from './spatial-zone-drop';
 import { playTurnChime } from './turn-alert';
@@ -371,8 +371,8 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
       const target = event.target as HTMLElement | null;
       if (target?.matches('input, textarea, select, [contenteditable="true"]')) return;
 
-      if ((event.ctrlKey || event.metaKey) && !event.altKey && (event.code === 'KeyZ' || event.code === 'KeyY')) {
-        const direction = event.code === 'KeyY' || event.shiftKey ? 'redo' : 'undo';
+      const direction = historyDirectionForKey(event);
+      if (direction) {
         if (connected && isMyTurn && (direction === 'undo' ? match?.canUndo : match?.canRedo))
           socket?.emit(`match:${direction}`);
         event.preventDefault();
@@ -1025,7 +1025,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
         {!identity?.spectator && <div className="undo-controls multiplayer-undo-controls">
           <button type="button" disabled={!connected || !isMyTurn || !match.canUndo} onClick={() => socket?.emit('match:undo')}>Undo</button>
           <button type="button" disabled={!connected || !isMyTurn || !match.canRedo} onClick={() => socket?.emit('match:redo')}>Redo</button>
-          <span>Ctrl+Z / Ctrl+Y · as many steps as this match has</span>
+          <span>Q / E · as many steps as this match has</span>
         </div>}
 
         {!identity?.spectator && room.settings.format === '1v1' && <section className="shortcut-bar compact" aria-label="Keyboard shortcuts">

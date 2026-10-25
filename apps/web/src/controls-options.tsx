@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   CONTROL_LABELS,
   DEFAULT_BINDINGS,
+  HISTORY_KEYS,
   displayKey,
   type ControlAction,
   type KeyBindings,
@@ -27,6 +28,11 @@ export function ControlsOptions({
     const onKeyDown = (event: KeyboardEvent) => {
       event.preventDefault();
       event.stopPropagation();
+
+      if (event.code === HISTORY_KEYS.undo || event.code === HISTORY_KEYS.redo) {
+        setMessage(`${displayKey(event.code)} is reserved for ${event.code === HISTORY_KEYS.undo ? 'Undo' : 'Redo'}.`);
+        return;
+      }
 
       const duplicate = ACTIONS.find(action => action !== listening && bindings[action] === event.code);
       if (duplicate) {
@@ -55,7 +61,7 @@ export function ControlsOptions({
         <button onClick={onClose} aria-label="Close controls options">×</button>
       </div>
 
-      <p className="muted">Click a binding, then press the key you want. Shift remains the large-nudge modifier.</p>
+      <p className="muted">Click a binding, then press the key you want. Q is Undo, E is Redo, and Shift remains the large-nudge modifier.</p>
 
       <div className="binding-list">
         {ACTIONS.map(action => <div className="binding-row" key={action}>

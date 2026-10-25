@@ -7,7 +7,7 @@ import { ResizableDockColumn } from './resizable-dock-column';
 import { CardContextMenu, type CardContextState } from './card-context-menu';
 import { localHandDropRect, pointInRect } from './drag-drop';
 import { toCanonicalPoint, toViewerPoint, toViewerSeat } from './board-perspective';
-import { actionForCode, displayKey, type KeyBindings } from './controls';
+import { actionForCode, displayKey, historyDirectionForKey, type KeyBindings } from './controls';
 import { automaticZoneCardPoint, orderZoneCards, runeColor } from './zone-card-layout';
 import { spatialDropZone } from './spatial-zone-drop';
 import {
@@ -342,8 +342,9 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
       const target = event.target as HTMLElement | null;
       if (target?.matches('input, textarea, select, [contenteditable="true"]')) return;
 
-      if ((event.ctrlKey || event.metaKey) && !event.altKey && (event.code === 'KeyZ' || event.code === 'KeyY')) {
-        stepHistory(event.code === 'KeyY' || event.shiftKey ? 'redo' : 'undo');
+      const historyDirection = historyDirectionForKey(event);
+      if (historyDirection) {
+        stepHistory(historyDirection);
         event.preventDefault();
         return;
       }
@@ -814,7 +815,7 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
           <button type="button" disabled={!timelines.get(viewer)?.past.length} onClick={() => stepHistory('undo')}>Undo</button>
           <button type="button" disabled={!timelines.get(viewer)?.future.length} onClick={() => stepHistory('redo')}>Redo</button>
         </div>
-        <kbd>Ctrl Z</kbd><span>Undo</span><kbd>Ctrl Y</kbd><span>Redo</span>
+        <kbd>Q</kbd><span>Undo</span><kbd>E</kbd><span>Redo</span>
         <strong>Keyboard</strong>
         <kbd>R</kbd><span>Rotate</span>
         <kbd>F</kbd><span>Flip</span>
