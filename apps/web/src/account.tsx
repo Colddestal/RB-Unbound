@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import type { DeckDefinition } from '@rb-unbound/tabletop';
 
-export type SavedDeck = { id: string; deck: DeckDefinition };
+export type SavedDeck = { id: string; deck: DeckDefinition; isPrivate?: boolean };
 type Account = { username: string; token: string };
 type AccountContextValue = { account: Account | null; signIn: (name: string, password: string, register: boolean) => Promise<void>; signOut: () => void };
 const AccountContext = createContext<AccountContextValue>({ account: null, signIn: async () => undefined, signOut: () => undefined });

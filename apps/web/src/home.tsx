@@ -1,4 +1,4 @@
-type Destination = 'local' | 'decks' | 'multiplayer';
+type Destination = 'local' | 'decks' | 'multiplayer' | 'discovery';
 
 export function Home({ moduleCount, onNavigate }: { moduleCount: number; onNavigate: (destination: Destination) => void }) {
   return <div className="home-page">
@@ -27,7 +27,8 @@ export function Home({ moduleCount, onNavigate }: { moduleCount: number; onNavig
       <section className="home-section" aria-labelledby="launch-title"><div className="section-heading"><div><span className="home-kicker">EXPLORE THE APP</span><h2 id="launch-title">Where would you like to go?</h2></div><span>Pick up wherever you want</span></div>
         <div className="home-launch-grid"><button className="launch-card" onClick={() => onNavigate('local')}><span className="launch-glyph launch-local">▦</span><strong>Local sandbox</strong><small>Try the tabletop and pass turns on one screen.</small><span className="launch-arrow">↗</span></button>
           <button className="launch-card" onClick={() => onNavigate('decks')}><span className="launch-glyph launch-decks">▤</span><strong>Deck editor</strong><small>Build, import, and export your prototype decks.</small><span className="launch-arrow">↗</span></button>
-          <button className="launch-card" onClick={() => onNavigate('multiplayer')}><span className="launch-glyph launch-rooms">◎</span><strong>Multiplayer rooms</strong><small>Create or join a room with a running server.</small><span className="launch-arrow">↗</span></button></div>
+          <button className="launch-card" onClick={() => onNavigate('multiplayer')}><span className="launch-glyph launch-rooms">◎</span><strong>Multiplayer rooms</strong><small>Create or join a room with a running server.</small><span className="launch-arrow">↗</span></button>
+          <button className="launch-card" onClick={() => onNavigate('discovery')}><span className="launch-glyph launch-decks">⌕</span><strong>Discover decks</strong><small>Browse public decks and copy a favorite into your account.</small><span className="launch-arrow">↗</span></button></div>
       </section>
     </div>
   </div>;

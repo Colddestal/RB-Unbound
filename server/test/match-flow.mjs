@@ -87,11 +87,45 @@ try {
   }, body: JSON.stringify({ moduleId: 'frontier-skirmish' }) });
   assert.equal(createdDeck.status, 201);
   const saved = await createdDeck.json();
+  assert.equal(saved.isPrivate, false);
   saved.deck.name = 'Account-bound test deck';
   const updatedDeck = await fetch(`${base}/api/decks/${saved.id}`, { method: 'PUT', headers: {
     Authorization: `Bearer ${a.token}`, 'Content-Type': 'application/json',
   }, body: JSON.stringify({ deck: saved.deck }) });
   assert.equal(updatedDeck.status, 200);
+  const discoverUrl = `${base}/api/discover/decks`;
+  let discovery = await fetch(discoverUrl).then(response => response.json());
+  assert.equal(discovery.total, 1, 'starter decks stay private');
+  assert.equal(discovery.decks[0].author, 'seat_one_test');
+  assert.equal(discovery.decks[0].name, 'Account-bound test deck');
+  assert.equal(discovery.decks[0].passwordHash, undefined);
+  assert.equal((await fetch(`${discoverUrl}?q=missing` ).then(response => response.json())).total, 0);
+  const publicView = await fetch(`${discoverUrl}/${saved.id}`);
+  assert.equal(publicView.status, 200);
+  assert.equal((await publicView.json()).deck.cards.length, saved.deck.cards.length);
+  assert.equal((await fetch(`${discoverUrl}/${a.deckId}`)).status, 404, 'starter cannot be viewed publicly');
+  const copyResponse = await fetch(`${base}/api/decks/${saved.id}/copy`, { method: 'POST', headers: { Authorization: `Bearer ${b.token}` } });
+  assert.equal(copyResponse.status, 201);
+  const copied = await copyResponse.json();
+  assert.notEqual(copied.id, saved.id);
+  assert.equal(copied.isPrivate, false);
+  const hide = await fetch(`${base}/api/decks/${saved.id}`, { method: 'PUT', headers: {
+    Authorization: `Bearer ${a.token}`, 'Content-Type': 'application/json',
+  }, body: JSON.stringify({ deck: saved.deck, isPrivate: true }) });
+  assert.equal(hide.status, 200);
+  discovery = await fetch(discoverUrl).then(response => response.json());
+  assert.equal(discovery.total, 1, 'private original disappears but public copy remains');
+  assert.equal(discovery.decks[0].author, 'seat_two_test');
+  assert.equal((await fetch(`${discoverUrl}/${saved.id}`)).status, 404);
+  assert.equal((await fetch(`${base}/api/decks/${saved.id}/copy`, { method: 'POST', headers: { Authorization: `Bearer ${b.token}` } })).status, 404);
+  const invalidVisibility = await fetch(`${base}/api/decks/${saved.id}`, { method: 'PUT', headers: {
+    Authorization: `Bearer ${a.token}`, 'Content-Type': 'application/json',
+  }, body: JSON.stringify({ deck: saved.deck, isPrivate: 'false' }) });
+  assert.equal(invalidVisibility.status, 400);
+  const reveal = await fetch(`${base}/api/decks/${saved.id}`, { method: 'PUT', headers: {
+    Authorization: `Bearer ${a.token}`, 'Content-Type': 'application/json',
+  }, body: JSON.stringify({ deck: saved.deck, isPrivate: false }) });
+  assert.equal(reveal.status, 200);
   a.deckId = saved.id;
   const wrong = await fetch(`${base}/api/decks/${a.deckId}`, { headers: { Authorization: `Bearer ${b.token}` } });
   assert.equal(wrong.status, 404);
@@ -194,6 +228,8 @@ try {
   await waitForServer();
   const restoredDecks = await fetch(`${base}/api/decks`, { headers: { Authorization: `Bearer ${a.token}` } }).then(response => response.json());
   assert.equal(restoredDecks.decks.find(item => item.id === a.deckId)?.deck.name, 'Account-bound test deck');
+  assert.equal(restoredDecks.decks.find(item => item.id === a.deckId)?.isPrivate, false);
+  assert.equal((await fetch(discoverUrl).then(response => response.json())).total, 2);
   const resumedSocket = await connect(a.token);
   const resumed = next(resumedSocket, 'match:update', value => value.phase === 'playing');
   resumedSocket.emit('session:resume', { token: roomToken });
