@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { frontierSkirmishModule } from '@rb-unbound/tabletop';
-import { automaticZoneCardPoint } from '../zone-card-layout';
+import { builtInCardCatalog, frontierSkirmishModule } from '@rb-unbound/tabletop';
+import { automaticZoneCardPoint, orderZoneCards, runeColor } from '../zone-card-layout';
 
 describe('horizontal Rune row layout', () => {
   const runes = frontierSkirmishModule.zones.find(zone => zone.id === 'resources')!;
@@ -37,5 +37,20 @@ describe('horizontal Rune row layout', () => {
 
     expect(points.every(point => point.y === 110)).toBe(true);
     expect((points[0].x + points[3].x) / 2).toBe(500);
+  });
+
+  it('groups Runes by color while retaining draw order within a color', () => {
+    const catalog = new Map(builtInCardCatalog.map(card => [card.id, card]));
+    const drawn = [
+      { id: 'green-a', definitionId: 'rune-green', order: 0 },
+      { id: 'blue-a', definitionId: 'rune-blue', order: 1 },
+      { id: 'green-b', definitionId: 'rune-green', order: 2 },
+      { id: 'blue-b', definitionId: 'rune-blue', order: 3 },
+    ];
+    const ordered = orderZoneCards(runes, drawn, catalog);
+    expect(ordered.map(card => card.id)).toEqual(['blue-a', 'blue-b', 'green-a', 'green-b']);
+    expect(runeColor(ordered[0], catalog)).toBe('blue');
+    expect(ordered.map((_, index) => automaticZoneCardPoint(runes, 1, index, ordered.length)!.x))
+      .toEqual([392, 464, 536, 608]);
   });
 });

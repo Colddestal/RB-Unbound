@@ -8,7 +8,7 @@ import { CardContextMenu, type CardContextState } from './card-context-menu';
 import { pointInRect } from './drag-drop';
 import { toCanonicalPoint, toViewerPoint, toViewerSeat } from './board-perspective';
 import { actionForCode, displayKey, type KeyBindings } from './controls';
-import { automaticZoneCardPoint } from './zone-card-layout';
+import { automaticZoneCardPoint, orderZoneCards, runeColor } from './zone-card-layout';
 import { spatialDropZone } from './spatial-zone-drop';
 import { playTurnChime } from './turn-alert';
 import { battlefieldArt } from './battlefield-art';
@@ -272,9 +272,8 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   const canonicalCardPoint = (card: PublicCard) => {
     const zone = activeModule.zones.find(item => item.id === card.zone);
     if (zone?.stackable && card.x === 0 && card.y === 0) {
-      const zoneCards = match?.table.cards
-        .filter(item => item.owner === card.owner && item.zone === card.zone)
-        .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id)) ?? [];
+      const zoneCards = orderZoneCards(zone, match?.table.cards
+        .filter(item => item.owner === card.owner && item.zone === card.zone) ?? [], definitions);
       const index = Math.max(0, zoneCards.findIndex(item => item.id === card.id));
       return automaticZoneCardPoint(zone, card.owner, index, zoneCards.length) ??
         canonicalZonePosition(zone, card.owner) ??
@@ -443,11 +442,12 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
     const style: CSSProperties = {
       left: `${point.x / 10}%`,
       top: `${point.y / 6}%`,
-      transform: `rotate(${card.rotation}deg)`,
+      transform: `translate(-50%,-50%) rotate(${card.rotation}deg)`,
     };
 
     return <button
       key={card.id}
+      aria-label={`${card.label ?? 'Hidden card'}, Player ${card.owner}`}
       className={`card ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${card.faceUp ? '' : `back back-${cardBack.pattern}`} ${owned ? '' : 'locked'}`}
       style={style}
       onMouseEnter={() => setHovered(card.id)}
@@ -474,10 +474,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
         if (!owned || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
         const rect = boardRef.current?.getBoundingClientRect();
         if (!rect || !pointInRect({ x: event.clientX, y: event.clientY }, rect)) return;
-        const point = toCanonicalPoint({
-          x: ((event.clientX - rect.left - event.currentTarget.offsetWidth / 2) / rect.width) * 1000,
-          y: ((event.clientY - rect.top - event.currentTarget.offsetHeight / 2) / rect.height) * 600,
-        }, perspectiveViewer, room?.settings.format ?? '1v1');
+        const point = dropCursorPoint(event.clientX, event.clientY, rect);
         emitAction({
           type: 'move',
           id: card.id,
@@ -496,9 +493,11 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
         if (owned && handRect && pointInRect({ x: event.clientX, y: event.clientY }, handRect)) {
           emitAction({ type: 'to-zone', id: card.id, zone: 'hand' });
         } else if (owned && boardRect && pointInRect({ x: event.clientX, y: event.clientY }, boardRect)) {
-          const targetZone = spatialLayerForCard(card, dropCursorPoint(event.clientX, event.clientY, boardRect)) ??
+          const point = dropCursorPoint(event.clientX, event.clientY, boardRect);
+          const targetZone = spatialLayerForCard(card, point) ??
             (zoneGroupFor(card.zone) === 'battlefield' && card.zone !== 'field' ? 'field' : undefined);
-          if (targetZone && targetZone !== card.zone) emitAction({ type: 'to-zone', id: card.id, zone: targetZone });
+          if (targetZone && targetZone !== card.zone) emitAction({ type: 'to-zone', id: card.id, zone: targetZone, ...point });
+          else emitAction({ type: 'move', id: card.id, ...point });
         }
         setFieldDragId('');
         event.currentTarget.releasePointerCapture(event.pointerId);
@@ -506,7 +505,6 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
     >
       <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span>
       <span>{card.label ?? 'Hidden card'}</span>
-      <small>P{card.owner} · {zoneLabel(card.zone)}</small>
     </button>;
   };
 
@@ -815,11 +813,6 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
             return players.flatMap(player => {
               const position = zoneAreaPosition(zone, player);
               if (!position || !zone.size) return [];
-              const count = player
-                ? (zoneBehavior(zone) === 'pile'
-                  ? hiddenByOwner.get(player)?.zoneCounts?.[zone.id] ?? (zone.id === 'deck' ? hiddenByOwner.get(player)?.deckCount ?? 0 : 0)
-                  : match.table.cards.filter(card => card.owner === player && card.zone === zone.id).length)
-                : match.table.cards.filter(card => card.zone === zone.id).length;
               return [<div
                 className={`module-zone-area module-zone-${zone.kind} module-zone-behavior-${zone.behavior ?? 'legacy'} module-zone-role-${zone.role ?? 'none'} ${draggedGroup === 'battlefield' && zone.group === 'battlefield' ? 'spatial-drop-target' : ''}`}
                 key={`${zone.id}-${player ?? 'shared'}`}
@@ -829,10 +822,8 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
                   width: `${zone.size.width / 10}%`,
                   height: `${zone.size.height / 6}%`,
                 }}
-              >
-                <strong>{zone.label}</strong>
-                {(zone.kind === 'deck' || zone.kind === 'discard' || zone.kind === 'custom') && <span>{count ? `${count} card${count === 1 ? '' : 's'}` : ''}</span>}
-              </div>];
+                aria-hidden="true"
+              />];
             });
           })}
           {selectionBox && <div className="selection-box" style={{
@@ -843,10 +834,10 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           }} />}
           {fieldCards.map(renderFieldCard)}
           {activeModule.zones.filter(zone => zone.kind === 'custom' && zoneBehavior(zone) !== 'pile').flatMap(zone => {
-            return match.table.cards
-              .filter(card => card.zone === zone.id)
-              .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id))
-              .flatMap((card, index, cards) => {
+            const cards = orderZoneCards(zone, match.table.cards.filter(card => card.zone === zone.id), definitions);
+            return cards.flatMap(card => {
+              const ownerCards = zone.ownerScoped ? cards.filter(item => item.owner === card.owner) : cards;
+              const index = ownerCards.findIndex(item => item.id === card.id);
               const rawPositions = !zone.ownerScoped && zone.displayCopies?.length
                 ? zone.displayCopies
                 : [zoneAreaPosition(zone, card.owner) ?? { x: 500, y: 300 }];
@@ -857,7 +848,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
                 const art = card.faceUp ? battlefieldArt(battlefieldDefinition) : undefined;
                 const hasFreePosition = movable && (card.x !== 0 || card.y !== 0);
                 const automaticPoint = !hasFreePosition && movable
-                  ? automaticZoneCardPoint(zone, card.owner, index, cards.length)
+                  ? automaticZoneCardPoint(zone, card.owner, index, ownerCards.length)
                   : undefined;
                 const position = hasFreePosition
                   ? toViewerPoint({ x: card.x, y: card.y }, perspectiveViewer, room.settings.format)
@@ -869,7 +860,8 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
                 const styleOffset = hasFreePosition || automaticPoint ? 0 : index * 7;
                 return <button
                   key={`${card.id}-${copyIndex}`}
-                  className={`card custom-zone-card ${art ? 'battlefield-on-board' : ''} ${movable ? 'movable-zone-card' : ''} ${zone.displayCopies?.length ? 'shared-card-copy' : ''} ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${card.faceUp ? '' : `back back-${cardBack.pattern}`} ${owned ? '' : 'locked'}`}
+                  aria-label={`${card.label ?? 'Hidden card'}, Player ${card.owner}`}
+                  className={`card custom-zone-card ${art ? 'battlefield-on-board' : ''} ${movable ? 'movable-zone-card' : ''} ${zone.role === 'runes' && runeColor(card, definitions) ? `rune-color-${runeColor(card, definitions)}` : ''} ${zone.displayCopies?.length ? 'shared-card-copy' : ''} ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${card.faceUp ? '' : `back back-${cardBack.pattern}`} ${owned ? '' : 'locked'}`}
                   style={{
                     left: `calc(${position.x / 10}% + ${styleOffset}px)`,
                     top: `calc(${position.y / 6}% + ${styleOffset}px)`,
@@ -900,10 +892,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
                     if (!owned || !movable || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
                     const rect = boardRef.current?.getBoundingClientRect();
                     if (!rect || !pointInRect({ x: event.clientX, y: event.clientY }, rect)) return;
-                    const point = toCanonicalPoint({
-                      x: ((event.clientX - rect.left - event.currentTarget.offsetWidth / 2) / rect.width) * 1000,
-                      y: ((event.clientY - rect.top - event.currentTarget.offsetHeight / 2) / rect.height) * 600,
-                    }, perspectiveViewer, room.settings.format);
+                    const point = dropCursorPoint(event.clientX, event.clientY, rect);
                     emitAction({ type: 'move', id: card.id, x: point.x, y: point.y });
                   }}
                   onPointerCancel={event => {
@@ -917,9 +906,11 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
                     if (handRect && pointInRect({ x: event.clientX, y: event.clientY }, handRect)) {
                       emitAction({ type: 'to-zone', id: card.id, zone: 'hand' });
                     } else if (boardRect && pointInRect({ x: event.clientX, y: event.clientY }, boardRect)) {
-                      const targetZone = spatialLayerForCard(card, dropCursorPoint(event.clientX, event.clientY, boardRect)) ??
+                      const point = dropCursorPoint(event.clientX, event.clientY, boardRect);
+                      const targetZone = spatialLayerForCard(card, point) ??
                         (zoneGroupFor(card.zone) === 'battlefield' && card.zone !== 'field' ? 'field' : undefined);
-                      if (targetZone && targetZone !== card.zone) emitAction({ type: 'to-zone', id: card.id, zone: targetZone });
+                      if (targetZone && targetZone !== card.zone) emitAction({ type: 'to-zone', id: card.id, zone: targetZone, ...point });
+                      else emitAction({ type: 'move', id: card.id, ...point });
                     }
                     setFieldDragId('');
                     event.currentTarget.releasePointerCapture(event.pointerId);
@@ -928,7 +919,6 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
                   {!art && <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span>}
                   <span>{card.label ?? 'Hidden card'}</span>
                   {art && <span className="battlefield-card-rules">{String(battlefieldDefinition?.metadata.rules ?? '')}</span>}
-                  <small>{zone.group === 'battlefield' ? `Battlefield · ${zone.label}` : zone.label}</small>
                 </button>;
               });
             });
@@ -1011,17 +1001,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
                 event.clientY >= rect.top && event.clientY <= rect.bottom) {
                 const cursorPoint = dropCursorPoint(event.clientX, event.clientY, rect);
                 const targetZone = spatialLayerForCard(card, cursorPoint) ?? 'field';
-                emitAction({ type: 'to-zone', id: card.id, zone: targetZone });
-                const point = toCanonicalPoint({
-                  x: ((event.clientX - rect.left - 43) / rect.width) * 1000,
-                  y: ((event.clientY - rect.top - 58) / rect.height) * 600,
-                }, perspectiveViewer, room?.settings.format ?? '1v1');
-                emitAction({
-                  type: 'move',
-                  id: card.id,
-                  x: point.x,
-                  y: point.y,
-                });
+                emitAction({ type: 'to-zone', id: card.id, zone: targetZone, ...cursorPoint });
               }
               handDragRef.current = null;
               setDragPreview(null);
