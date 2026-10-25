@@ -39,7 +39,11 @@ npm run dev:server
 
 ## Host a temporary test site from a Windows desktop
 
-The desktop can serve the built website and multiplayer rooms from one address. This is separate from the GitHub Pages demo URL. In **Command Prompt** (copy commands only, without the `C:\...>` prompt):
+The desktop can serve the built website and multiplayer rooms from one address. This is separate from the GitHub Pages demo URL.
+
+For the usual Windows setup, double-click **`Start-RB-Unbound.cmd`** in the repository folder. It finds `cloudflared-windows-amd64.exe` in your Downloads folder (or next to the launcher), builds and starts the game server, waits for it to be ready, then opens Cloudflare Tunnel in a second window. The public `https://...trycloudflare.com` link appears in the Cloudflare window. If a game server or tunnel is already running, the launcher reuses it. Keep both windows open while playing. After pulling an update, close the old game server window with Ctrl+C before using the launcher to rebuild it.
+
+To start the server manually instead:
 
 ```cmd
 cd /d "C:\Users\willi\Documents\GitHub\RB-Unbound"
@@ -53,10 +57,10 @@ Players can create a username and password from **Sign in → Create an account*
 
 Once everyone readies in the room, each player locks in an account deck. Seats 1 and 2 then choose one of their three Battlefields from their hand; seat 1 fills A and seat 2 fills B. Their unchosen Battlefields leave the table. Every player draws four cards and may replace up to two from the top of their deck before regular turns begin. The Battlefield artwork and effect text are visible on the mat; prototype effects are resolved manually.
 
-For friends outside the home network, install [Cloudflare's Windows cloudflared](https://developers.cloudflare.com/tunnel/downloads/). In a **second** Command Prompt, run:
+For friends outside the home network, install [Cloudflare's Windows cloudflared](https://developers.cloudflare.com/tunnel/downloads/). If starting the tunnel manually, run this in a **second** Command Prompt:
 
 ```cmd
-cloudflared tunnel --url http://127.0.0.1:3001
+"%USERPROFILE%\Downloads\cloudflared-windows-amd64.exe" tunnel --url http://127.0.0.1:3001
 ```
 
 Open the temporary `https://...trycloudflare.com` address printed by cloudflared. Share **that address** with players; the site and multiplayer socket use the same secure origin. Keep both windows open and the computer awake. This test URL changes each time the tunnel restarts, and anyone with the link can reach the test site. No router port forwarding or inbound Windows Firewall rule is needed. Stop sharing by pressing Ctrl+C in the tunnel window.
