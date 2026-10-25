@@ -295,7 +295,7 @@ export const frontierSkirmishModule: GameModule = {
       group: 'battlefield',
       stackable: true,
       defaultPosition: { x: 500, y: 300 },
-      size: { width: 780, height: 138 },
+      size: { width: 780, height: 100 },
     },
     {
       id: 'base',
@@ -308,10 +308,10 @@ export const frontierSkirmishModule: GameModule = {
       group: 'battlefield',
       stackable: true,
       seatPositions: {
-        '1': { x: 500, y: 410 },
-        '2': { x: 500, y: 190 },
+        '1': { x: 500, y: 390 },
+        '2': { x: 500, y: 210 },
       },
-      size: { width: 600, height: 80 },
+      size: { width: 600, height: 65 },
     },
     {
       id: 'resources',
@@ -325,10 +325,10 @@ export const frontierSkirmishModule: GameModule = {
       cardLayout: 'horizontal',
       stackable: true,
       seatPositions: {
-        '1': { x: 500, y: 485 },
-        '2': { x: 500, y: 115 },
+        '1': { x: 500, y: 470 },
+        '2': { x: 500, y: 110 },
       },
-      size: { width: 540, height: 70 },
+      size: { width: 540, height: 55 },
     },
     {
       id: 'commander',
@@ -376,21 +376,6 @@ export const frontierSkirmishModule: GameModule = {
       size: { width: 70, height: 82 },
     },
     {
-      id: 'side-deck',
-      label: 'Side Deck',
-      kind: 'custom',
-      visibility: 'hidden',
-      ownerScoped: true,
-      behavior: 'pile',
-      role: 'side-deck',
-      pile: { shuffle: false, countPublic: true },
-      seatPositions: {
-        '1': { x: 170, y: 565 },
-        '2': { x: 170, y: 225 },
-      },
-      size: { width: 70, height: 82 },
-    },
-    {
       id: 'discard',
       label: 'Trash',
       kind: 'discard',
@@ -414,10 +399,6 @@ export const frontierSkirmishModule: GameModule = {
       role: 'objective',
       capacity: 1,
       defaultPosition: { x: 285, y: 300 },
-      displayCopies: [
-        { x: 285, y: 258 },
-        { x: 285, y: 342 },
-      ],
       size: { width: 78, height: 54 },
     },
     {
@@ -430,10 +411,6 @@ export const frontierSkirmishModule: GameModule = {
       role: 'objective',
       capacity: 1,
       defaultPosition: { x: 715, y: 300 },
-      displayCopies: [
-        { x: 715, y: 258 },
-        { x: 715, y: 342 },
-      ],
       size: { width: 78, height: 54 },
     },
     {
@@ -470,6 +447,7 @@ export const frontierSkirmishModule: GameModule = {
     { id: 'affinities', label: 'Affinities', type: 'tags' },
     { id: 'identity', label: 'Character', type: 'text' },
     { id: 'rules', label: 'Sample text', type: 'text' },
+    { id: 'image', label: 'Original art', type: 'text' },
   ],
 };
 

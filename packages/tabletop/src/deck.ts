@@ -20,11 +20,12 @@ export type DeckDefinition = {
     legend: string[];
     runes: string[];
     champion: string[];
+    battlefields?: string[];
     sideDeck: string[];
   };
 };
 
-export const DECK_SECTIONS = ['legend', 'runes', 'champion', 'deck', 'sideDeck'] as const;
+export const DECK_SECTIONS = ['legend', 'runes', 'champion', 'deck', 'sideDeck', 'battlefields'] as const;
 export type DeckSection = typeof DECK_SECTIONS[number];
 export const AFFINITIES = ['blue', 'red', 'green', 'orange', 'yellow', 'purple'] as const;
 export type Affinity = typeof AFFINITIES[number];
@@ -43,7 +44,7 @@ export function deckWarnings(deck: DeckDefinition, catalog: readonly CardDefinit
   const byId = new Map(catalog.map(card => [card.id, card]));
   const warnings: string[] = [];
   const limits: Record<DeckSection, [number, number]> = {
-    legend: [1, 1], runes: [12, 12], champion: [1, 1], deck: [39, 39], sideDeck: [0, 8],
+    legend: [1, 1], runes: [12, 12], champion: [1, 1], deck: [39, 39], sideDeck: [0, 8], battlefields: [3, 3],
   };
   for (const section of DECK_SECTIONS) {
     const cards = sectionCards(deck, section);
@@ -77,11 +78,13 @@ export function deckWarnings(deck: DeckDefinition, catalog: readonly CardDefinit
     copies.set(id, count);
     if (count === 4) warnings.push(`${byId.get(id)?.name ?? id} exceeds three copies across Deck and Side deck.`);
   }
+  const battlefields = sectionCards(deck, 'battlefields');
+  if (new Set(battlefields).size !== battlefields.length) warnings.push('Choose three different Battlefields.');
   return warnings;
 }
 
 export function sectionLabel(section: DeckSection): string {
-  return ({ legend: 'Legend', runes: 'Runes', champion: 'Champion', deck: 'Deck', sideDeck: 'Side deck' })[section];
+  return ({ legend: 'Legend', runes: 'Runes', champion: 'Champion', deck: 'Deck', sideDeck: 'Side deck', battlefields: 'Battlefields' })[section];
 }
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
@@ -136,7 +139,9 @@ export function isDeckDefinition(
   if (!deck.sections || typeof deck.sections !== 'object' || Array.isArray(deck.sections)) return false;
   return (['legend', 'runes', 'champion', 'sideDeck'] as const).every(section =>
     Array.isArray(deck.sections?.[section]) && deck.sections[section].length <= 500 &&
-    deck.sections[section].every(id => typeof id === 'string' && allowedCards.has(id)));
+    deck.sections[section].every(id => typeof id === 'string' && allowedCards.has(id))) &&
+    (deck.sections.battlefields === undefined || (Array.isArray(deck.sections.battlefields) &&
+      deck.sections.battlefields.length <= 500 && deck.sections.battlefields.every(id => typeof id === 'string' && allowedCards.has(id))));
 }
 
 export function searchCardCatalog(
@@ -196,6 +201,17 @@ function frontierSamples(): CardDefinition[] {
     card('champion-sera', 'Sera, Starlight', 'champion', ['yellow', 'purple'], { identity: 'Sera', rules: 'When played, look at the top card of your deck. Resolve this manually.' }),
   ];
   const runes = AFFINITIES.map(color => card(`rune-${color}`, `${color[0].toUpperCase()}${color.slice(1)} Rune`, 'runes', [color], { rules: `A basic ${color} sample rune. Track its use manually.` }));
+  const battlefields = [
+    card('battlefield-glass-current', 'Glass Current', 'battlefields', ['blue', 'green'], { image: 'tide', rules: 'When this battlefield opens, each player may ready one unit here. Resolve manually.' }),
+    card('battlefield-moss-crossing', 'Moss Crossing', 'battlefields', ['blue', 'green'], { image: 'grove', rules: 'A unit here gains +1 power while its player controls a Base. Resolve manually.' }),
+    card('battlefield-fog-harbor', 'Fog Harbor', 'battlefields', ['blue', 'green'], { image: 'harbor', rules: 'Once per turn, a player here may look at the top card of their deck. Resolve manually.' }),
+    card('battlefield-ember-pass', 'Ember Pass', 'battlefields', ['red', 'orange'], { image: 'tide', rules: 'The first unit to enter here each turn gains +1 power. Resolve manually.' }),
+    card('battlefield-copper-grove', 'Copper Grove', 'battlefields', ['red', 'orange'], { image: 'grove', rules: 'After a unit leaves here, its player may ready another unit. Resolve manually.' }),
+    card('battlefield-amber-port', 'Amber Port', 'battlefields', ['red', 'orange'], { image: 'harbor', rules: 'Once per turn, a player here may move a unit to a Base. Resolve manually.' }),
+    card('battlefield-dawn-ridge', 'Dawn Ridge', 'battlefields', ['yellow', 'purple'], { image: 'tide', rules: 'At the start of a turn, a player here may look at their top card. Resolve manually.' }),
+    card('battlefield-moonwood', 'Moonwood', 'battlefields', ['yellow', 'purple'], { image: 'grove', rules: 'Once per turn, a player here may give a unit +1 power. Resolve manually.' }),
+    card('battlefield-twilight-quay', 'Twilight Quay', 'battlefields', ['yellow', 'purple'], { image: 'harbor', rules: 'After playing a card here, a player may move another unit. Resolve manually.' }),
+  ];
   const sampleEffects = [
     'When played, ready one of your cards. Resolve this manually.',
     'Look at the top card of your deck. Resolve this manually.',
@@ -212,7 +228,7 @@ function frontierSamples(): CardDefinition[] {
     card('ember-dune', 'Ember Dune', 'deck', ['red', 'orange'], { class: 'Spell', power: 2, rules: 'Give one of your units +2 power this turn. Resolve this manually.' }),
     card('dusk-dawn', 'Dusk and Dawn', 'deck', ['yellow', 'purple'], { class: 'Spell', power: 2, rules: 'Look at the top card of your deck, then draw a card. Resolve this manually.' }),
   ];
-  return [...legends, ...champions, ...runes, ...main, ...mixed];
+  return [...legends, ...champions, ...runes, ...main, ...mixed, ...battlefields];
 }
 
 export function starterDeckForModule(
@@ -236,6 +252,7 @@ export function starterDeckForModule(
         legend: ids.includes('legend-tidekeeper') ? ['legend-tidekeeper'] : [],
         champion: ids.includes('champion-mira') ? ['champion-mira'] : [],
         runes: Array.from({ length: 6 }, () => ['rune-blue', 'rune-green']).flat().filter(id => ids.includes(id)),
+        battlefields: ['battlefield-glass-current', 'battlefield-moss-crossing', 'battlefield-fog-harbor'].filter(id => ids.includes(id)),
         sideDeck: [],
       },
     };

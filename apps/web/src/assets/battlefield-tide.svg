@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 360" role="img" aria-label="Original illustration of a luminous river winding between cliffs">
+ <defs><linearGradient id="sky" x2="0" y2="1"><stop stop-color="#082139"/><stop offset="1" stop-color="#4f8d9b"/></linearGradient><linearGradient id="water" x2="0" y2="1"><stop stop-color="#a4f0e2"/><stop offset="1" stop-color="#176887"/></linearGradient></defs>
+ <rect width="560" height="360" fill="url(#sky)"/><circle cx="395" cy="74" r="34" fill="#f5ddb1" opacity=".88"/>
+ <path d="M0 180 116 100 220 174 295 115 385 192 477 102 560 158V360H0" fill="#183c56"/><path d="M0 232 75 169 180 247 265 181 357 251 444 172 560 243V360H0" fill="#286273"/>
+ <path d="M198 360c90-71 136-93 130-140-4-28 36-39 90-35-65 30-52 59-7 78 50 21 59 55 56 97" fill="url(#water)"/>
+ <path d="M0 330c88-37 147-49 218-32M349 311c78-25 137-20 211 3" fill="none" stroke="#a6e6df" stroke-width="4" opacity=".42"/>
+ <path d="M57 165v92m-20-54 20-60 21 60M503 145v102m-19-53 19-60 20 60" fill="none" stroke="#65a99e" stroke-width="8" stroke-linecap="round"/>
+</svg>

@@ -21,6 +21,13 @@ body{min-width:320px;background:linear-gradient(145deg,#61738f,#8798b2 64%,#6478
 .site-topbar .mode-switch button:hover{color:#3e3abf;background:#f7f9ff}
 .site-topbar .mode-switch button.active{background:#4a45d8;color:#fff;box-shadow:0 5px 13px #514dd24a}
 .site-top-actions{display:flex;gap:8px;justify-content:flex-end}
+.account-control{position:relative;align-self:center}
+.site-top-actions .account-open{width:auto;min-width:72px;padding:0 12px;border-radius:20px;font-size:12px;font-weight:800;white-space:nowrap}
+.account-popover{position:absolute;right:0;top:calc(100% + 10px);width:min(320px,calc(100vw - 36px));padding:18px;z-index:600;box-shadow:0 18px 38px #1b2f5360!important}
+.account-popover h2{margin:0 0 8px}.account-popover p{font-size:12px;line-height:1.5;color:#657590}
+.account-popover label{display:grid;gap:5px;margin:10px 0;font-size:12px}.account-popover input{padding:9px;width:100%}
+.site-top-actions .account-popover button{width:auto;height:auto;padding:9px 11px;border-radius:8px;font-size:12px}
+.site-top-actions .account-popover .account-switch{border:0;background:transparent;box-shadow:none;color:#4b47d9;padding-left:0}
 .site-top-actions button,.site-top-actions a{display:grid;place-items:center;width:35px;height:35px;border:1px solid #e0e6f0;border-radius:50%;background:#fbfcff;color:#4f5c7b;text-decoration:none;font-size:19px;line-height:1;box-shadow:0 3px 10px #5d6d8d13}
 .site-top-actions button:hover,.site-top-actions a:hover{color:#4844d5;border-color:#b6bef2}
 .site-content{padding:clamp(16px,2.2vw,34px) clamp(16px,3vw,46px) 40px;min-width:0}
@@ -115,6 +122,7 @@ body{min-width:320px;background:linear-gradient(145deg,#61738f,#8798b2 64%,#6478
 .site-shell .sample-card-meta span,.site-shell .sample-card-meta small,.site-shell .deck-pane-title span{color:#6e7e98}
 .site-shell .deck-validation{background:#fff2e7;border-color:#e8bd99;color:#8a5636}.site-shell .deck-validation.ready{background:#e3f4ed;border-color:#93ceb1;color:#246d51}
 .site-shell .hand-strip{background:#f4f7fc;border-color:#d7e0ee;color:#31405e}.site-shell .hand-strip.hand-drop-active{background:#e3f7eb}
+.site-shell .board-hand-strip{background:#071726d9;border-color:#7297a381;color:#d7edf1}.site-shell .board-hand-strip.hand-drop-active{background:#175845dd}
 .site-shell .options-backdrop{background:#17223f9c}.site-shell .options-dialog{background:#f9faff;color:#25314f;border-color:#fff}.site-shell .options-heading>button,.site-shell .binding-row button{background:#e9edfa;color:#344260;border-color:#d0d9e9}.site-shell .binding-row,.site-shell .inspector-metadata{border-color:#dce4f1}.site-shell .binding-message{color:#307c65}
 .site-shell .error{color:#99494f;background:#ffebed;border-color:#e9b4bc}
 .site-shell .chip{color:#396b6b;background:#e8f5f0;border-color:#a3d5be}
@@ -123,6 +131,17 @@ body{min-width:320px;background:linear-gradient(145deg,#61738f,#8798b2 64%,#6478
 .site-shell .card-context-menu button,.site-shell .deck-context-menu button{color:#354464;background:transparent}.site-shell .card-context-menu button:hover,.site-shell .deck-context-menu button:hover{background:#e8edfa}
 .site-shell .dock-resize-handle span{background:#edf2fa;color:#566987;border-color:#c6d2e3}.site-shell .dock-resize-handle::before{background:#bdcce1}
 .site-shell .module-zone-area,.site-shell .board,.site-shell .card,.site-shell .mini-card,.site-shell .sample-card,.site-shell .deck-card-preview,.site-shell .duel-turn-control,.site-shell .deck-pile-control{color:#edf3fc}
+
+/* Fill the desktop during a match while retaining the card-info dock. */
+@media(min-width:1180px){
+  .site-shell:has(.match-layout){width:calc(100% - 16px);min-height:calc(100vh - 16px);margin:8px auto}
+  .site-content:has(.match-layout){padding:12px 16px 28px}
+  .match-layout{gap:12px}
+  .match-layout .multiplayer-board{height:clamp(690px,calc(100vh - 180px),860px);aspect-ratio:auto;min-height:0}
+  .match-layout .board .card:not(.battlefield-on-board){width:56px;height:76px;gap:4px;font-size:10px}
+  .match-layout .board .card-symbol{font-size:19px}
+  .match-layout .board .card small{font-size:8px}
+}
 
 @media(max-width:1170px){.site-topbar{grid-template-columns:1fr auto}.site-topbar .mode-switch{grid-column:1/-1;grid-row:2;justify-self:start}.site-top-actions{grid-column:2;grid-row:1}.home-feature{grid-template-columns:1fr}.home-board-art{min-height:200px}.feature-copy{padding-bottom:0}}
 @media(max-width:850px){.site-shell{grid-template-columns:1fr;width:100%;min-height:100vh;margin:0;border-radius:0}.site-rail{display:none}.site-topbar{padding:17px}.site-content{padding:17px}.site-topbar .mode-switch{width:100%;overflow-x:auto}.home-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.home-grid{grid-template-columns:1fr}.home-section{grid-column:1}.home-feature{grid-template-columns:1fr 1fr}}

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 360" role="img" aria-label="Original illustration of a sunlit grove and stone crossing">
+ <defs><linearGradient id="sky" x2="0" y2="1"><stop stop-color="#174653"/><stop offset="1" stop-color="#a7c98d"/></linearGradient><radialGradient id="sun"><stop stop-color="#fff3bc"/><stop offset="1" stop-color="#e4d884" stop-opacity="0"/></radialGradient></defs>
+ <rect width="560" height="360" fill="url(#sky)"/><circle cx="281" cy="105" r="103" fill="url(#sun)"/><path d="M0 231Q144 184 269 239T560 215V360H0" fill="#285b4e"/>
+ <path d="M0 278q108-60 210-17t350-17v116H0" fill="#143f46"/><path d="M226 360Q262 298 368 241l48 2Q305 312 293 360" fill="#bad0ad"/>
+ <g fill="#163f3c" stroke="#193c3c" stroke-width="12"><path d="M90 260V87m-73 104 73-140 73 140M462 270V67m-86 146 86-166 84 166"/><circle cx="91" cy="110" r="52"/><circle cx="462" cy="97" r="65"/></g>
+ <path d="M225 358q62-69 132-94" stroke="#e7dbad" stroke-width="5" opacity=".7" fill="none"/>
+</svg>

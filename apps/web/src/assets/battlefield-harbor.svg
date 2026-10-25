@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 560 360" role="img" aria-label="Original illustration of a misty harbor at dusk">
+ <defs><linearGradient id="sky" x2="0" y2="1"><stop stop-color="#25314f"/><stop offset="1" stop-color="#bf9175"/></linearGradient><linearGradient id="sea" x2="0" y2="1"><stop stop-color="#3c7281"/><stop offset="1" stop-color="#1a394e"/></linearGradient></defs>
+ <rect width="560" height="360" fill="url(#sky)"/><circle cx="401" cy="107" r="42" fill="#f6d29c" opacity=".8"/>
+ <path d="M0 180 119 153 249 191 342 162 465 188 560 151v209H0" fill="#394d5a"/><path d="M0 216q120-19 241 8t319-14v150H0" fill="url(#sea)"/>
+ <path d="M0 273h560M70 300h202m110 27h178" stroke="#a8d1c6" stroke-width="3" opacity=".35"/>
+ <path d="M45 180h64v75H45zm380-44h56v116h-56z" fill="#23394e"/><path d="M57 199h15m22 0h9m332-38h10m17 0h9" stroke="#f2cc94" stroke-width="7"/>
+ <path d="M150 260v-98m0 0 117 58H150m161 52v-84m0 0 80 49h-80" fill="#d5d1b9" stroke="#243d4e" stroke-width="4"/>
+</svg>

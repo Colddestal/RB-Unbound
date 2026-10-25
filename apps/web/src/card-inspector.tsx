@@ -4,6 +4,7 @@ import {
   type GameModule,
   type PlayerId,
 } from '@rb-unbound/tabletop';
+import { battlefieldArt } from './battlefield-art';
 
 export type InspectableCard = {
   id: string;
@@ -40,6 +41,7 @@ export function CardInspector({
       item.moduleId === module.id &&
       item.moduleVersion === module.version)
     : undefined;
+  const art = card?.faceUp ? battlefieldArt(definition) : undefined;
   return <aside className="card-inspector panel" aria-live="polite">
     <div className="inspector-heading">
       <div>
@@ -50,7 +52,8 @@ export function CardInspector({
     </div>
 
     {card ? <>
-      <div className={`inspector-card-preview ${card.faceUp ? '' : 'back'}`}>
+      <div className={`inspector-card-preview ${card.faceUp ? '' : 'back'} ${art ? 'sample-battlefield' : ''}`}
+        style={art ? { backgroundImage: `linear-gradient(180deg,transparent 15%,#071e2bdc 100%),url(${art})` } : undefined}>
         <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span>
         <strong>{card.label ?? 'Hidden card'}</strong>
       </div>
@@ -58,7 +61,7 @@ export function CardInspector({
       {definition && module?.cardFields?.length ? <section className="inspector-metadata">
         <span className="eyebrow">{module.name.toUpperCase()} DATA</span>
         <dl className="inspector-details">
-          {module.cardFields.map(field => {
+          {module.cardFields.filter(field => field.id !== 'image').map(field => {
             const value = metadataValue(definition.metadata[field.id]);
             if (!value) return null;
             return <div key={field.id}><dt>{field.label}</dt><dd>{value}</dd></div>;
