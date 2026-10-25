@@ -2,7 +2,9 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import type { RoomState } from '@rb-unbound/lobby';
 import type { TurnState } from '@rb-unbound/lobby';
-import type { ModulePackage, PlayerId, TableState } from '@rb-unbound/tabletop';
+import type { DeckDefinition, ModulePackage, PlayerId, TableState } from '@rb-unbound/tabletop';
+
+export type MatchPhase = 'select-deck' | 'battlefield' | 'mulligan' | 'playing';
 
 export type PersistedSession = {
   tokenHash: string;
@@ -20,6 +22,11 @@ export type PersistedMatch = {
   table: TableState;
   turn?: TurnState;
   lastActionSequence: Array<[string, number]>;
+  phase?: MatchPhase;
+  selectedDecks?: Array<[PlayerId, DeckDefinition]>;
+  selectedAccounts?: Array<[PlayerId, string]>;
+  pickedBattlefields?: PlayerId[];
+  mulliganLocked?: PlayerId[];
 };
 
 export type PersistenceSnapshot = {

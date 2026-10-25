@@ -123,6 +123,23 @@ button:focus-visible,select:focus-visible,input:focus-visible,.card:focus-visibl
 .invite-code-box small{color:#8fa4b8}
 
 .teammate-hand-strip{border-color:#456675;background:#0d1d28}
+.board-hand-strip{position:absolute;left:21%;right:16%;bottom:8px;z-index:75;margin:0;padding:4px 8px;background:#071726c9;border-color:#7297a381;box-shadow:0 6px 20px #0007}
+.board-hand-strip>strong{display:block;font-size:10px;color:#cae5eb}
+.board-hand-strip .hand-cards{padding:1px 0;min-height:77px}
+.board-hand-strip .mini-card{min-width:58px;width:58px;height:77px;padding:4px;font-size:9px;flex-shrink:0}
+.board-hand-strip .mini-card span{font-size:15px}
+.sample-battlefield{background-position:center;background-size:cover;color:#fff;text-shadow:0 2px 4px #000}
+.sample-battlefield .sample-card-rules{background:#071723d6;border-radius:8px;padding:8px;text-shadow:none}
+.battlefield-on-board{background-size:cover!important;background-position:center!important;text-shadow:0 2px 4px #000}
+.battlefield-on-board small{line-height:1.25}
+.match-layout .board .battlefield-on-board{width:106px;height:138px;padding:7px;gap:4px;justify-content:flex-end;font-size:10px}
+.battlefield-card-rules{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;overflow:hidden;font-size:8px;line-height:1.2;font-weight:500}
+.match-setup-panel{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px}
+.match-setup-panel h2{margin:0 0 4px}.match-setup-panel p{margin:0;font-size:12px}
+.match-setup-panel select{min-width:210px;max-width:360px;padding:9px}
+.match-setup-control{width:175px}
+.match-setup-control .duel-end-turn-button{font-size:12px}
+@media(max-width:700px){.board-hand-strip{left:12%;right:12%;bottom:5px}.board-hand-strip .mini-card{min-width:52px;width:52px;height:70px}}
 .teammate-hand-strip>strong::after{content:" · shared by room setting";font-weight:400;color:#7f91a4}
 .mini-card.locked{cursor:default;opacity:.88}
 
@@ -156,7 +173,8 @@ button:focus-visible,select:focus-visible,input:focus-visible,.card:focus-visibl
 .deck-tools-heading p{margin:8px 0 14px}
 .deck-status{padding:8px 12px;border-radius:999px;background:#563a27;color:#ffcd9b;font-size:12px;font-weight:800;white-space:nowrap}
 .deck-status.ready{background:#245044;color:#a9f3cf}
-.deck-editor-settings{display:grid;grid-template-columns:minmax(140px,220px) minmax(200px,450px);gap:12px;margin-bottom:18px}
+.deck-editor-settings{display:grid;grid-template-columns:minmax(160px,270px) auto minmax(200px,450px);gap:12px;margin-bottom:18px;align-items:end}
+.deck-editor-settings>button{height:39px;white-space:nowrap}
 .deck-editor-settings input,.deck-editor-settings select,.deck-catalog-pane input{width:100%;padding:10px;background:#0c1725;color:#edf3fc;border:1px solid #3a5069;border-radius:8px}
 .deck-editor-settings label,.deck-catalog-pane label{display:grid;gap:6px;color:#a8c3d6;font-size:12px;font-weight:700}
 .deck-section-tabs{display:flex;gap:8px;overflow-x:auto;border-bottom:1px solid #344c60;margin-bottom:18px;padding-bottom:12px}

@@ -1,5 +1,7 @@
-import { useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { battlefieldArt } from './battlefield-art';
+import { accountRequest, useAccount, type SavedDeck } from './account';
 import {
   DECK_SECTIONS, cardSection, deckWarnings, isDeckDefinition, searchCardCatalog,
   sectionCards, sectionLabel, starterDeckForModule,
@@ -21,7 +23,9 @@ function SampleCardFace({ card, size }: { card: CardDefinition; size: 'catalog' 
     '--card-accent-b': CARD_COLORS[colors[1]] ?? CARD_COLORS[colors[0]] ?? '#597b91',
   } as CSSProperties;
   const section = cardSection(card);
-  return <div className={`sample-card sample-card-${size} ${section === 'runes' ? 'sample-rune' : ''}`} style={style}>
+  const art = battlefieldArt(card);
+  return <div className={`sample-card sample-card-${size} ${section === 'runes' ? 'sample-rune' : ''} ${art ? 'sample-battlefield' : ''}`}
+    style={{ ...style, ...(art ? { backgroundImage: `linear-gradient(180deg,transparent 22%,#081e2ade 100%),url(${art})` } : {}) }}>
     <span className="sample-card-mark" aria-hidden="true">{section === 'runes' ? '◇' : section === 'legend' ? '✦' : '◆'}</span>
     <strong>{card.name}</strong>
     {size !== 'list' && <small>{sectionLabel(section)}</small>}
@@ -46,8 +50,8 @@ function previewPosition(clientX: number, clientY: number): { x: number; y: numb
   };
 }
 
-function savedDeckKey(module: GameModule, player: 1 | 2): string {
-  return `rb-unbound-deck:${module.id}@${module.version}:p${player}`;
+function libraryKey(module: GameModule): string {
+  return `rb-unbound-decks:${module.id}@${module.version}`;
 }
 
 function isSavedDraft(value: unknown, module: GameModule, catalog: readonly CardDefinition[]): value is DeckDefinition {
@@ -57,21 +61,35 @@ function isSavedDraft(value: unknown, module: GameModule, catalog: readonly Card
     isDeckDefinition({ ...deck, name: deck.name || 'Untitled' }, module, catalog);
 }
 
-function initialDeck(module: GameModule, catalog: readonly CardDefinition[], player: 1 | 2): DeckDefinition {
+function localLibrary(module: GameModule, catalog: readonly CardDefinition[]): SavedDeck[] {
   try {
-    const saved = window.localStorage.getItem(savedDeckKey(module, player));
+    const saved = window.localStorage.getItem(libraryKey(module));
     if (saved) {
       const parsed: unknown = JSON.parse(saved);
-      if (isSavedDraft(parsed, module, catalog)) return parsed;
+      if (Array.isArray(parsed)) {
+        const decks = parsed.filter(item => item && typeof item.id === 'string' && isSavedDraft(item.deck, module, catalog));
+        if (decks.length) return decks;
+      }
+    }
+    const drafts = ([1, 2] as const).flatMap(player => {
+      const raw = window.localStorage.getItem(`rb-unbound-deck:${module.id}@${module.version}:p${player}`);
+      if (!raw) return [];
+      const parsed: unknown = JSON.parse(raw);
+      return isSavedDraft(parsed, module, catalog)
+        ? [{ id: crypto.randomUUID(), deck: { ...parsed, name: `${parsed.name} · Seat ${player} draft` } }] : [];
+    });
+    if (drafts.length) {
+      window.localStorage.setItem(libraryKey(module), JSON.stringify(drafts));
+      return drafts;
     }
   } catch {
     // Storage can be disabled; the editor still works for this session.
   }
-  return starterDeckForModule(module, catalog);
+  return [{ id: crypto.randomUUID(), deck: starterDeckForModule(module, catalog) }];
 }
 
 function sectionLimit(section: DeckSection): string {
-  return ({ legend: '1', runes: '12', champion: '1', deck: '39', sideDeck: '0–8' })[section];
+  return ({ legend: '1', runes: '12', champion: '1', deck: '39', sideDeck: '0–8', battlefields: '3 unique' })[section];
 }
 
 export function DeckTools({ module, onLoadDeck, catalog }: {
@@ -79,15 +97,43 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
   catalog: readonly CardDefinition[];
   onLoadDeck: (deck: DeckDefinition, player: 1 | 2) => void;
 }) {
+  const { account } = useAccount();
   const structured = module.id === 'frontier-skirmish';
   const sections = structured ? DECK_SECTIONS : (['deck'] as const);
   const [query, setQuery] = useState('');
   const [activeSection, setActiveSection] = useState<DeckSection>('deck');
-  const [player, setPlayer] = useState<1 | 2>(1);
-  const [deck, setDeck] = useState<DeckDefinition>(() => initialDeck(module, catalog, 1));
+  const [library, setLibrary] = useState<SavedDeck[]>(() => localLibrary(module, catalog));
+  const [selectedId, setSelectedId] = useState(() => library[0].id);
+  const [deck, setDeck] = useState<DeckDefinition>(() => library[0].deck);
   const [message, setMessage] = useState('');
   const [preview, setPreview] = useState<CardPreview | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSave = useRef<{ token: string; id: string; deck: DeckDefinition } | null>(null);
+  const saveQueue = useRef(Promise.resolve());
+  const flushSave = () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    const pending = pendingSave.current;
+    pendingSave.current = null;
+    if (!pending) return saveQueue.current;
+    saveQueue.current = saveQueue.current.catch(() => undefined).then(() =>
+      accountRequest(pending.token, `/decks/${pending.id}`, 'PUT', { deck: pending.deck })
+        .then(() => setMessage('Saved to your account.'))
+        .catch(() => setMessage('Could not save this deck to the host. Export a copy before leaving.')));
+    return saveQueue.current;
+  };
+  useEffect(() => {
+    if (!account) { const items = localLibrary(module, catalog); setLibrary(items); setSelectedId(items[0].id); setDeck(items[0].deck); return; }
+    let active = true;
+    void accountRequest<{ decks: SavedDeck[] }>(account.token, '/decks').then(result => {
+      if (!active) return;
+      const items = result.decks.filter(item => item.deck.moduleId === module.id && item.deck.moduleVersion === module.version);
+      setLibrary(items); setSelectedId(items[0]?.id ?? '');
+      if (items[0]) setDeck(items[0].deck);
+    }).catch(() => setMessage('Could not load account decks. Check the host connection.'));
+    return () => { active = false; void flushSave(); };
+  }, [account?.token, module.id, module.version]);
   const cardById = useMemo(() => new Map(catalog.map(card => [card.id, card])), [catalog]);
   const legend = cardById.get(sectionCards(deck, 'legend')[0]);
   const allowedColors = new Set(Array.isArray(legend?.metadata.affinities) ? legend.metadata.affinities : []);
@@ -106,23 +152,52 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
   const updateDeck = (next: DeckDefinition) => {
     setPreview(null);
     setDeck(next);
-    try {
-      window.localStorage.setItem(savedDeckKey(module, player), JSON.stringify(next));
-      setMessage('Saved in this browser.');
-    } catch {
-      setMessage('Changes are available for this session. Export a copy to keep them.');
+    const updated = library.map(item => item.id === selectedId ? { ...item, deck: next } : item);
+    setLibrary(updated);
+    if (account) {
+      pendingSave.current = { token: account.token, id: selectedId, deck: next };
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => { void flushSave(); }, 450);
+    } else {
+      try { window.localStorage.setItem(libraryKey(module), JSON.stringify(updated)); setMessage('Saved in this browser. Sign in to use it on another device.'); }
+      catch { setMessage('Changes are available for this session. Export a copy to keep them.'); }
     }
+  };
+
+  const createDeck = async () => {
+    try {
+      await flushSave();
+      const item = account
+        ? await accountRequest<SavedDeck>(account.token, '/decks', 'POST', { moduleId: module.id })
+        : { id: crypto.randomUUID(), deck: { ...starterDeckForModule(module, catalog), name: `Deck ${library.length + 1}` } };
+      const next = [...library, item]; setLibrary(next); setSelectedId(item.id); setDeck(item.deck);
+      if (!account) window.localStorage.setItem(libraryKey(module), JSON.stringify(next));
+      setMessage('New deck created.');
+    } catch { setMessage('Could not create a deck. Check the host connection.'); }
+  };
+
+  const deleteDeck = async () => {
+    if (library.length < 2) { setMessage('Keep at least one deck in the library.'); return; }
+    try {
+      await flushSave();
+      if (account) await accountRequest(account.token, `/decks/${selectedId}`, 'DELETE');
+      const next = library.filter(item => item.id !== selectedId);
+      setLibrary(next); setSelectedId(next[0].id); setDeck(next[0].deck);
+      if (!account) window.localStorage.setItem(libraryKey(module), JSON.stringify(next));
+      setMessage('Deck deleted.');
+    } catch { setMessage('Could not delete the deck.'); }
   };
   const setSection = (section: DeckSection, ids: string[]) => {
     if (section === 'deck') updateDeck({ ...deck, cards: ids });
     else updateDeck({ ...deck, sections: {
       legend: sectionCards(deck, 'legend'), runes: sectionCards(deck, 'runes'),
-      champion: sectionCards(deck, 'champion'), sideDeck: sectionCards(deck, 'sideDeck'),
+      champion: sectionCards(deck, 'champion'), sideDeck: sectionCards(deck, 'sideDeck'), battlefields: sectionCards(deck, 'battlefields'),
       [section]: ids,
     } });
   };
   const addCard = (id: string) => {
     if (current.length >= MAX_CARDS) { setMessage('This section is full.'); return; }
+    if (activeSection === 'battlefields' && current.includes(id)) { setMessage('Choose a different Battlefield.'); return; }
     setSection(activeSection, activeSection === 'legend' || activeSection === 'champion' ? [id] : [...current, id]);
   };
   const download = () => {
@@ -137,10 +212,17 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
   const importDeck = async (file?: File) => {
     if (!file) return;
     try {
+      await flushSave();
       if (file.size > 250_000) throw new Error('too large');
       const parsed: unknown = JSON.parse(await file.text());
       if (!isDeckDefinition(parsed, module, catalog)) throw new Error('invalid');
-      updateDeck(parsed);
+      const item = account
+        ? await accountRequest<SavedDeck>(account.token, '/decks', 'POST', { moduleId: module.id })
+        : { id: crypto.randomUUID(), deck: parsed };
+      if (account) await accountRequest(account.token, `/decks/${item.id}`, 'PUT', { deck: parsed });
+      const next = [...library, { id: item.id, deck: parsed }];
+      setLibrary(next); setSelectedId(item.id); setDeck(parsed);
+      if (!account) window.localStorage.setItem(libraryKey(module), JSON.stringify(next));
       setMessage(`Imported ${parsed.name}. Review the warnings before loading.`);
     } catch {
       setMessage('That deck is invalid, belongs to another module/version, or references unknown cards.');
@@ -155,12 +237,14 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
       <span className={`deck-status ${usable ? 'ready' : 'incomplete'}`}>{usable ? 'Ready to load' : 'Needs changes'}</span>
     </div>
     <div className="deck-editor-settings">
-      <label>Edit for player
-        <select value={player} onChange={event => {
-          const next = Number(event.target.value) as 1 | 2;
-          setPlayer(next); setDeck(initialDeck(module, catalog, next)); setMessage(''); setPreview(null);
-        }}><option value={1}>Player 1</option><option value={2}>Player 2</option></select>
+      <label>Decks
+        <select value={selectedId} onChange={event => {
+          void flushSave();
+          const item = library.find(item => item.id === event.target.value);
+          if (item) { setSelectedId(item.id); setDeck(item.deck); setMessage(''); setPreview(null); }
+        }}>{library.map(item => <option key={item.id} value={item.id}>{item.deck.name}</option>)}</select>
       </label>
+      <button type="button" onClick={() => { void createDeck(); }}>Create New Deck +</button>
       <label>Deck name
         <input maxLength={100} value={deck.name} onChange={event => updateDeck({ ...deck, name: event.target.value })} placeholder="Name your deck" />
       </label>
@@ -185,7 +269,7 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
             <SampleCardFace card={card} size="catalog" />
             <div className="sample-card-meta"><strong>{card.name}</strong><span>{Array.isArray(card.metadata.affinities) ? card.metadata.affinities.join(' · ') : 'Original sample'}</span>
               <small>{String(card.metadata.rules ?? card.metadata.class ?? '')}</small></div>
-            <button type="button" disabled={current.length >= MAX_CARDS} onClick={() => addCard(card.id)} aria-label={`Add ${card.name}`}>{activeSection === 'legend' || activeSection === 'champion' ? 'Select' : '+ Add'}</button>
+            <button type="button" disabled={current.length >= MAX_CARDS || (activeSection === 'battlefields' && current.includes(card.id))} onClick={() => addCard(card.id)} aria-label={`Add ${card.name}`}>{activeSection === 'legend' || activeSection === 'champion' ? 'Select' : '+ Add'}</button>
           </div>)}
           {!results.length && <p className="muted">No cards match. Choose another Legend or clear the search.</p>}
         </div>
@@ -228,7 +312,7 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
               <div className="deck-editor-quantity">
                 <button type="button" onClick={() => { setActiveSection(section); const ids = sectionCards(deck, section); const index = ids.lastIndexOf(id); setSection(section, ids.filter((_, position) => position !== index)); }} aria-label={`Remove ${cardById.get(id)?.name ?? id}`}>−</button>
                 <strong aria-label={`${count} copies`}>{count}</strong>
-                <button type="button" disabled={section === 'legend' || section === 'champion' || sectionCards(deck, section).length >= MAX_CARDS}
+              <button type="button" disabled={section === 'legend' || section === 'champion' || section === 'battlefields' || sectionCards(deck, section).length >= MAX_CARDS}
                   onClick={() => { setActiveSection(section); setSection(section, [...sectionCards(deck, section), id]); }} aria-label={`Add another ${cardById.get(id)?.name ?? id}`}>+</button>
               </div>
             </div>)}
@@ -244,9 +328,11 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
 
     <div className="button-row deck-actions">
       <button onClick={() => { updateDeck(starterDeckForModule(module, catalog)); setMessage('Reset to the original sample starter.'); }}>Reset to starter</button>
+      <button onClick={() => { void deleteDeck(); }}>Delete deck</button>
       <button onClick={() => fileRef.current?.click()}>Import deck</button>
       <button onClick={download}>Export deck</button>
-      <button className="primary" disabled={!usable} onClick={() => { onLoadDeck(deck, player); setMessage(`Loaded ${deck.name} to Player ${player}.`); }}>Load to Player {player}</button>
+      <button className="primary" disabled={!usable} onClick={() => { void flushSave().then(() => { onLoadDeck(deck, 1); setMessage(`Loaded ${deck.name} to Seat 1 for local testing.`); }); }}>Test as Seat 1</button>
+      <button className="primary" disabled={!usable} onClick={() => { void flushSave().then(() => { onLoadDeck(deck, 2); setMessage(`Loaded ${deck.name} to Seat 2 for local testing.`); }); }}>Test as Seat 2</button>
     </div>
     <input ref={fileRef} hidden type="file" accept=".json,application/json" onChange={event => {
       void importDeck(event.target.files?.[0]); event.target.value = '';

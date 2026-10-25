@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, relative, resolve, sep } from 'node:path';
+import { accountForToken, handleAccountApi, loadAccounts, playableAccountDeck } from './accounts.js';
 import { Server, type Socket } from 'socket.io';
 import {
   addSpectator,
@@ -42,6 +43,8 @@ import {
   type TableAction,
   type TableState,
   pileCapabilities,
+  sectionCards,
+  type DeckDefinition,
   zoneBehavior,
 } from '@rb-unbound/tabletop';
 import { approximatePayloadBytes, RateLimiter, type LimitRule } from './rate-limit.js';
@@ -50,6 +53,7 @@ import {
   saveSnapshot,
   snapshotPath,
   type PersistenceSnapshot,
+  type MatchPhase,
 } from './persistence.js';
 
 type Session = {
@@ -68,6 +72,11 @@ type MatchRecord = {
   table: TableState;
   turn: TurnState;
   lastActionSequence: Map<string, number>;
+  phase: MatchPhase;
+  selectedDecks: Map<PlayerId, DeckDefinition>;
+  selectedAccounts: Map<PlayerId, string>;
+  pickedBattlefields: Set<PlayerId>;
+  mulliganLocked: Set<PlayerId>;
 };
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
@@ -87,6 +96,9 @@ const EVENT_LIMITS: Record<string, LimitRule> = {
   'chat:send': { capacity: 5, refillPerSecond: 0.5 },
   'match:request-state': { capacity: 8, refillPerSecond: 1 },
   'match:end-turn': { capacity: 4, refillPerSecond: 0.5 },
+  'match:select-deck': { capacity: 5, refillPerSecond: 0.2 },
+  'match:pick-battlefield': { capacity: 4, refillPerSecond: 0.2 },
+  'match:mulligan': { capacity: 4, refillPerSecond: 0.2 },
   'match:action': { capacity: 90, refillPerSecond: 30 },
 };
 
@@ -102,6 +114,9 @@ const EVENT_MAX_BYTES: Record<string, number> = {
   'chat:send': 1200,
   'match:request-state': 64,
   'match:end-turn': 128,
+  'match:select-deck': 128,
+  'match:pick-battlefield': 128,
+  'match:mulligan': 512,
   'match:action': 2048,
 };
 
@@ -120,6 +135,7 @@ const mimeTypes: Record<string, string> = {
 };
 
 const httpServer = createServer(async (req, res) => {
+  if (await handleAccountApi(req, res)) return;
   if (req.url === '/healthz' && req.method === 'GET') {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify({ status: 'ok', commit: process.env.RB_UNBOUND_RELEASE_SHA ?? 'development' }));
@@ -294,6 +310,11 @@ function makeSnapshot(): PersistenceSnapshot {
       table: match.table,
       turn: match.turn,
       lastActionSequence: [...match.lastActionSequence.entries()],
+      phase: match.phase,
+      selectedDecks: [...match.selectedDecks.entries()],
+      selectedAccounts: [...match.selectedAccounts.entries()],
+      pickedBattlefields: [...match.pickedBattlefields],
+      mulliganLocked: [...match.mulliganLocked],
     })),
     modules: [...modulePackages.values()],
     sessions: [...sessions.values()].map(session => ({
@@ -368,6 +389,33 @@ function shuffleIds(ids: string[]): string[] {
     [copy[i], copy[j]] = [copy[j], copy[i]];
   }
   return copy;
+}
+
+function accountForSocket(socket: Socket) {
+  return accountForToken((socket.handshake.auth as { accountToken?: unknown })?.accountToken);
+}
+
+function requiresDeckSelection(room: RoomState): boolean {
+  return builtInModulePackages.some(bundle =>
+    bundle.module.id === room.settings.moduleId && bundle.module.version === room.settings.moduleVersion);
+}
+
+function prepareOpeningDecks(table: TableState, players: readonly PlayerId[]): TableState {
+  let cards = table.cards;
+  for (const player of players) {
+    const ids = shuffleIds(cards.filter(card => card.owner === player && card.zone === 'deck').map(card => card.id));
+    const order = new Map(ids.map((id, index) => [id, index]));
+    cards = cards.map(card => order.has(card.id) ? { ...card, order: order.get(card.id)! } : card);
+  }
+  return { ...table, cards };
+}
+
+function drawOpeningHands(match: MatchRecord, players: readonly PlayerId[]): void {
+  for (const player of players) for (let index = 0; index < 4; index += 1) {
+    match.table = applyAction(match.table, { type: 'draw', player, fromZone: 'deck', toZone: 'hand', faceUp: true });
+  }
+  match.phase = 'mulligan';
+  match.revision += 1;
 }
 
 function seatFor(room: RoomState, memberId: string): PlayerId | undefined {
@@ -502,6 +550,10 @@ function emitMatchViews(room: RoomState): void {
       spectator: false,
       revision: match.revision,
       turn: match.turn,
+      phase: match.phase,
+      selectedSeats: [...match.selectedDecks.keys()],
+      pickedSeats: [...match.pickedBattlefields],
+      mulliganSeats: [...match.mulliganLocked],
       table: projectTable(
         match.table,
         seat.seat as PlayerId,
@@ -517,6 +569,10 @@ function emitMatchViews(room: RoomState): void {
       spectator: true,
       revision: match.revision,
       turn: match.turn,
+      phase: match.phase,
+      selectedSeats: [...match.selectedDecks.keys()],
+      pickedSeats: [...match.pickedBattlefields],
+      mulliganSeats: [...match.mulliganLocked],
       table: projectTable(match.table, undefined, undefined, policy.publicZones, policy.publicCountZones),
     });
   }
@@ -647,6 +703,11 @@ async function restoreState(): Promise<void> {
         requiredSeats(rooms.get(record.roomCode)!.settings.format).includes(record.turn.seat)
         ? record.turn : initialTurn(rooms.get(record.roomCode)!.settings.format),
       lastActionSequence: new Map(record.lastActionSequence),
+      phase: record.phase ?? 'playing',
+      selectedDecks: new Map(record.selectedDecks ?? []),
+      selectedAccounts: new Map(record.selectedAccounts ?? []),
+      pickedBattlefields: new Set(record.pickedBattlefields ?? []),
+      mulliganLocked: new Set(record.mulliganLocked ?? []),
     });
   }
 
@@ -902,12 +963,15 @@ io.on('connection', socket => {
     matches.set(room.code, {
       revision: 0,
       turn: initialTurn(room.settings.format, started.series?.games.find(game => game.gameNumber === started.series?.currentGame)?.firstPlayerSeat),
-      table: createInitialTableForModule(
+      table: requiresDeckSelection(started) ? { version: 4, cards: [] } : createInitialTableForModule(
         requiredSeats(room.settings.format),
         packageForRoom(started).module,
         packageForRoom(started).cards,
       ),
       lastActionSequence: new Map(),
+      phase: requiresDeckSelection(started) ? 'select-deck' : 'playing',
+      selectedDecks: new Map(), selectedAccounts: new Map(),
+      pickedBattlefields: new Set(), mulliganLocked: new Set(),
     });
     emitRoom(started);
     io.to(room.code).emit('room:started', { code: room.code, format: room.settings.format, ruleset: room.settings.ruleset });
@@ -915,11 +979,80 @@ io.on('connection', socket => {
     scheduleSave();
   });
 
+  socket.on('match:select-deck', (payload: { deckId?: unknown } = {}) => {
+    const session = currentSession(socket);
+    const room = session ? rooms.get(session.roomCode) : undefined;
+    const match = room ? matches.get(room.code) : undefined;
+    const account = accountForSocket(socket);
+    if (!session?.seat || !room || !match || match.phase !== 'select-deck') return fail(socket, 'Deck selection is closed.');
+    if (!account || typeof payload.deckId !== 'string') return fail(socket, 'Sign in and choose one of your decks.');
+    const deck = playableAccountDeck(account, payload.deckId);
+    if (!deck || deck.moduleId !== room.settings.moduleId || deck.moduleVersion !== room.settings.moduleVersion)
+      return fail(socket, 'That deck is incomplete or does not belong to this game.');
+    match.selectedDecks.set(session.seat, deck);
+    match.selectedAccounts.set(session.seat, account.id);
+    match.revision += 1;
+    const players = requiredSeats(room.settings.format);
+    if (players.every(player => match.selectedDecks.has(player))) {
+      const packageForMatch = packageForRoom(room);
+      match.table = prepareOpeningDecks(createInitialTableForModule(
+        players, packageForMatch.module, packageForMatch.cards, match.selectedDecks,
+        packageForMatch.module.id === 'frontier-skirmish' ? [1, 2] : [],
+      ), players);
+      if (packageForMatch.module.id === 'frontier-skirmish') match.phase = 'battlefield';
+      else drawOpeningHands(match, players);
+    }
+    emitMatchViews(room); scheduleSave();
+  });
+
+  socket.on('match:pick-battlefield', (payload: { cardId?: unknown } = {}) => {
+    const session = currentSession(socket);
+    const room = session ? rooms.get(session.roomCode) : undefined;
+    const match = room ? matches.get(room.code) : undefined;
+    if (!session?.seat || !room || !match || match.phase !== 'battlefield') return fail(socket, 'Battlefield selection is closed.');
+    if (session.seat !== 1 && session.seat !== 2) return fail(socket, 'Your team captain chooses this Battlefield.');
+    if (match.pickedBattlefields.has(session.seat)) return fail(socket, 'Your Battlefield is already locked.');
+    const deck = match.selectedDecks.get(session.seat);
+    const chosen = match.table.cards.find(card => card.id === payload.cardId && card.owner === session.seat && card.zone === 'hand' &&
+      card.definitionId && deck && sectionCards(deck, 'battlefields').includes(card.definitionId));
+    if (!chosen) return fail(socket, 'Choose one of the Battlefields in your hand.');
+    const target = session.seat === 1 ? 'objective-a' : 'objective-b';
+    match.table = { ...match.table, cards: match.table.cards
+      .filter(card => card.owner !== session.seat || card.zone !== 'hand' || !card.definitionId ||
+        !deck || !sectionCards(deck, 'battlefields').includes(card.definitionId) || card.id === chosen.id)
+      .map(card => card.id === chosen.id ? { ...card, zone: target, faceUp: true, order: 0 } : card) };
+    match.pickedBattlefields.add(session.seat);
+    match.revision += 1;
+    if (match.pickedBattlefields.has(1) && match.pickedBattlefields.has(2)) drawOpeningHands(match, requiredSeats(room.settings.format));
+    emitMatchViews(room); scheduleSave();
+  });
+
+  socket.on('match:mulligan', (payload: { cardIds?: unknown } = {}) => {
+    const session = currentSession(socket);
+    const room = session ? rooms.get(session.roomCode) : undefined;
+    const match = room ? matches.get(room.code) : undefined;
+    if (!session?.seat || !room || !match || match.phase !== 'mulligan') return fail(socket, 'Mulligan is closed.');
+    if (match.mulliganLocked.has(session.seat)) return fail(socket, 'Your mulligan is already locked.');
+    const ids = payload.cardIds;
+    if (!Array.isArray(ids) || ids.length > 2 || new Set(ids).size !== ids.length ||
+      ids.some(id => typeof id !== 'string' || !match.table.cards.some(card => card.id === id && card.owner === session.seat && card.zone === 'hand')))
+      return fail(socket, 'Choose up to two cards from your opening hand.');
+    const last = Math.max(-1, ...match.table.cards.filter(card => card.owner === session.seat && card.zone === 'deck').map(card => card.order));
+    match.table = { ...match.table, cards: match.table.cards.map(card => ids.includes(card.id)
+      ? { ...card, zone: 'deck', faceUp: false, order: last + 1 + ids.indexOf(card.id) } : card) };
+    for (let index = 0; index < ids.length; index += 1)
+      match.table = applyAction(match.table, { type: 'draw', player: session.seat, fromZone: 'deck', toZone: 'hand', faceUp: true });
+    match.mulliganLocked.add(session.seat);
+    match.revision += 1;
+    if (requiredSeats(room.settings.format).every(player => match.mulliganLocked.has(player))) match.phase = 'playing';
+    emitMatchViews(room); scheduleSave();
+  });
+
   socket.on('match:end-turn', (payload: { expectedTurn?: unknown } = {}) => {
     const session = currentSession(socket);
     const room = session ? rooms.get(session.roomCode) : undefined;
     const match = session ? matches.get(session.roomCode) : undefined;
-    if (!session || !room || room.status !== 'active' || !match) return fail(socket, 'No active match.');
+    if (!session || !room || room.status !== 'active' || !match || match.phase !== 'playing') return fail(socket, 'Finish match setup first.');
     if (session.spectator || session.seat !== match.turn.seat) return fail(socket, 'It is not your turn.');
     if (payload.expectedTurn !== match.turn.number) return fail(socket, 'That turn has already ended.');
 
@@ -942,7 +1075,7 @@ io.on('connection', socket => {
     const session = currentSession(socket);
     const room = session ? rooms.get(session.roomCode) : undefined;
     const match = session ? matches.get(session.roomCode) : undefined;
-    if (!session || !room || room.status !== 'active' || !match) return fail(socket, 'No active match.');
+    if (!session || !room || room.status !== 'active' || !match || match.phase !== 'playing') return fail(socket, 'Finish match setup first.');
     if (session.spectator || !session.seat) return fail(socket, 'Spectators cannot manipulate the table.');
     if (session.seat !== match.turn.seat) return fail(socket, 'Wait for your turn to move cards.');
     if (!Number.isSafeInteger(payload.sequence) || Number(payload.sequence) < 1) return fail(socket, 'Invalid action sequence.');
@@ -1042,6 +1175,7 @@ async function shutdown(signal: string): Promise<void> {
 process.once('SIGINT', () => { void shutdown('SIGINT'); });
 process.once('SIGTERM', () => { void shutdown('SIGTERM'); });
 
+await loadAccounts();
 await restoreState();
 
 httpServer.listen(3001, '127.0.0.1', () => {

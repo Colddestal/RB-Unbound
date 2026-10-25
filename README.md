@@ -10,13 +10,13 @@ RB Unbound is an early-stage, free, community-oriented **general-purpose digital
 
 - **Manual-first:** move, rotate, flip, shuffle, and organize cards without automated game-rule enforcement.
 - **Two clients, one UI:** browser first; a Tauri desktop wrapper is planned.
-- **Multiplayer alpha:** private rooms and server-synchronized tables work with the development server; public hosting is still planned. The local tabletop works without an account.
+- **Multiplayer alpha:** private rooms and server-synchronized tables run from the desktop host. Local tabletop play still works without an account.
 - **Game-neutral:** no copyrighted card assets or proprietary rules are bundled. A sample prototype module is included.
 - **Automation later:** a generic, optional rule engine may be developed for original/authorized game modules. Automated Riftbound gameplay will not be implemented or distributed without express Riot authorization.
 
 ## Getting started
 
-The playable local sandbox is also published at [the browser demo](https://colddestal.github.io/RB-Unbound/demo/). The root GitHub Pages URL remains the project and Riot verification page. The hosted demo is static; multiplayer needs the separate local server until production hosting is ready.
+The playable local sandbox is also published at [the browser demo](https://colddestal.github.io/RB-Unbound/demo/). The root GitHub Pages URL remains the project and Riot verification page. The hosted demo is static; account decks and multiplayer need the desktop host.
 
 To rebuild the checked-in GitHub Pages demo after changing the web app, run `npm install` and `npm run build:demo`, then commit the updated `demo/` files.
 
@@ -27,7 +27,7 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL shown in the terminal. The Home dashboard links to the local tabletop, deck editor, and multiplayer rooms. Local play supports manual card movement and turns. The duel mat has an End Turn button with confirmation, while its keyboard shortcut guide sits below the mat. Choose the separate **Deck editor** tab to build with original sample cards. The Full Mat Prototype editor has Legend, Runes, Champion, Deck, and Side deck sections, affinity and character-name checks, counts, and actionable warnings. The right-side list shows each card's color markings; hover or focus a listed card to see its larger face and sample text. A sample starter uses 1 dual-affinity Legend, 12 Runes, 1 matching Champion, 39 other main cards, and up to 8 optional side cards. These are prototype limits, not official Riftbound deck validation. You can export an unfinished draft, import an app-generated JSON deck, and load a valid draft onto the local table's matching piles. Each player has a separate browser-saved draft; export a copy before clearing browser data. The browser demo hosts local play, while multiplayer requires a running development server.
+Open the Vite URL shown in the terminal. The Home dashboard links to the local tabletop, deck editor, and multiplayer rooms. Local play supports manual card movement and turns. The duel mat has an End Turn button with confirmation, while its keyboard shortcut guide sits below the mat. Choose the separate **Deck editor** tab to build with original sample cards. Its **Decks** menu holds multiple named decks and a create button. The Full Mat Prototype editor has Legend, Runes, Champion, Deck, Side deck, and Battlefields sections, affinity and character-name checks, counts, and actionable warnings. The right-side list shows each card's color markings; hover or focus a listed card to see its larger face and sample text. A sample starter uses 1 dual-affinity Legend, 12 Runes, 1 matching Champion, 39 main cards, and 3 different Battlefields; up to 8 side cards can be kept in the editor but are not laid on the table. These are prototype limits, not official Riftbound deck validation. You can export an unfinished draft, import an app-generated JSON deck, and test a valid draft on either local seat. Guest decks remain in that browser; sign in to store decks with your account on the desktop host.
 
 The built-in catalog still contains original placeholder cards. Official Riftbound cards and art require Riot-approved app-specific API access; the generic editor is ready for an authorized catalog but does not ship one.
 
@@ -48,6 +48,10 @@ npm run host:site
 ```
 
 The first command assumes that is where GitHub Desktop checked out the repository. After later pulls, `npm ci` is only needed if dependencies changed. Leave this window open and test `http://127.0.0.1:3001/` on the host desktop.
+
+Players can create a username and password from **Sign in → Create an account**. No email is requested, and the username, password hash, and deck library are stored in `.data/accounts.json` on this host. There is no email password reset, so keep the password and back up that file. When the temporary tunnel address changes, sign in again at the new address; browser sign-in tokens belong to the old address.
+
+Once everyone readies in the room, each player locks in an account deck. Seats 1 and 2 then choose one of their three Battlefields from their hand; seat 1 fills A and seat 2 fills B. Their unchosen Battlefields leave the table. Every player draws four cards and may replace up to two from the top of their deck before regular turns begin. The Battlefield artwork and effect text are visible on the mat; prototype effects are resolved manually.
 
 For friends outside the home network, install [Cloudflare's Windows cloudflared](https://developers.cloudflare.com/tunnel/downloads/). In a **second** Command Prompt, run:
 
@@ -79,7 +83,7 @@ Project Poor has submitted a Riot Developer Portal application for review. **URL
 
 ## Status
 
-Alpha foundation: original placeholder tabletop interface and TypeScript workspace. Not production-ready. No account system or public multiplayer has been released.
+Alpha foundation: original placeholder tabletop interface, TypeScript workspace, desktop-hosted accounts, and multiplayer room setup. The temporary tunnel is for testing, not an always-on public service.
 
 ## License
 

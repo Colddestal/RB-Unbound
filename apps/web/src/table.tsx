@@ -220,11 +220,10 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
         ...createCards(sectionCards(deck, 'legend'), 'commander', true),
         ...createCards(sectionCards(deck, 'champion'), 'vanguard', true),
         ...createCards(sectionCards(deck, 'runes'), 'resource-deck'),
-        ...createCards(sectionCards(deck, 'sideDeck'), 'side-deck'),
       ] : []),
     ];
     const replacedZones = new Set(deck.sections
-      ? ['deck', 'commander', 'vanguard', 'resource-deck', 'side-deck'] : ['deck']);
+      ? ['deck', 'commander', 'vanguard', 'resource-deck'] : ['deck']);
 
     setTable(state => ({
       ...state,

@@ -11,6 +11,8 @@ import { actionForCode, displayKey, type KeyBindings } from './controls';
 import { automaticZoneCardPoint } from './zone-card-layout';
 import { spatialDropZone } from './spatial-zone-drop';
 import { playTurnChime } from './turn-alert';
+import { battlefieldArt } from './battlefield-art';
+import { accountRequest, useAccount, type SavedDeck } from './account';
 import {
   builtInModulePackages,
   defaultGameModule,
@@ -76,13 +78,16 @@ type RoomSnapshot = {
 };
 
 type Identity = { code: string; seat?: PlayerId; spectator: boolean };
-type MatchSnapshot = { seat?: PlayerId; spectator: boolean; revision: number; turn: { seat: PlayerId; number: number }; table: TableView };
+type MatchSnapshot = { seat?: PlayerId; spectator: boolean; revision: number; turn: { seat: PlayerId; number: number };
+  phase?: 'select-deck' | 'battlefield' | 'mulligan' | 'playing';
+  selectedSeats?: PlayerId[]; pickedSeats?: PlayerId[]; mulliganSeats?: PlayerId[]; table: TableView };
 
 // The desktop-hosted site serves the UI and Socket.IO from the same origin.
 // Vite still uses the separate local server during development.
 const SERVER_URL = import.meta.env.DEV ? 'http://127.0.0.1:3001' : window.location.origin;
 
 export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBindings; modulePackages: ModulePackage[] }) {
+  const { account } = useAccount();
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
@@ -109,6 +114,9 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   const [fieldDragId, setFieldDragId] = useState('');
   const [cardContext, setCardContext] = useState<CardContextState | null>(null);
   const [confirmEndTurn, setConfirmEndTurn] = useState(false);
+  const [availableDecks, setAvailableDecks] = useState<SavedDeck[]>([]);
+  const [selectedDeckId, setSelectedDeckId] = useState('');
+  const [mulliganIds, setMulliganIds] = useState<string[]>([]);
   const [soundEnabled, setSoundEnabled] = useState(() => window.localStorage.getItem('rb-unbound-turn-sound') !== 'off');
   const soundEnabledRef = useRef(soundEnabled);
   const lastTurnRef = useRef<number | null>(null);
@@ -118,7 +126,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   const actionSequenceRef = useRef(0);
 
   useEffect(() => {
-    const client = io(SERVER_URL, { transports: ['websocket', 'polling'] });
+    const client = io(SERVER_URL, { transports: ['websocket', 'polling'], auth: { accountToken: account?.token } });
     setSocket(client);
 
     client.on('connect', () => {
@@ -194,7 +202,22 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
     });
 
     return () => { client.disconnect(); };
-  }, []);
+  }, [account?.token]);
+
+  useEffect(() => {
+    if (!account || match?.phase !== 'select-deck') return;
+    let active = true;
+    void accountRequest<{ decks: SavedDeck[] }>(account.token, '/decks')
+      .then(result => {
+        if (!active) return;
+        const options = result.decks.filter(item => item.deck.moduleId === room?.settings.moduleId && item.deck.moduleVersion === room?.settings.moduleVersion);
+        setAvailableDecks(options);
+        setSelectedDeckId(current => options.some(item => item.id === current) ? current : options[0]?.id ?? '');
+      }).catch(() => setError('Could not load your saved decks. Check your account connection.'));
+    return () => { active = false; };
+  }, [account?.token, match?.phase, room?.settings.moduleId, room?.settings.moduleVersion]);
+
+  useEffect(() => { setMulliganIds([]); setSelected(''); }, [match?.phase]);
 
   useEffect(() => {
     soundEnabledRef.current = soundEnabled;
@@ -235,7 +258,12 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   const compatibleCreatePackages = modulePackages.filter(bundle => bundle.module.supportedFormats.includes(format));
   const ownSeat = identity?.seat ? room?.seats.find(seat => seat.seat === identity.seat) : undefined;
   const activeSeat = room?.seats.find(seat => seat.seat === match?.turn.seat);
-  const isMyTurn = Boolean(identity?.seat && identity.seat === match?.turn.seat && !identity.spectator);
+  const isMyTurn = Boolean(match?.phase === 'playing' && identity?.seat && identity.seat === match?.turn.seat && !identity.spectator);
+  const phase = match?.phase ?? 'playing';
+  const hasSelectedDeck = Boolean(identity?.seat && match?.selectedSeats?.includes(identity.seat));
+  const hasPickedBattlefield = Boolean(identity?.seat && match?.pickedSeats?.includes(identity.seat));
+  const hasLockedMulligan = Boolean(identity?.seat && match?.mulliganSeats?.includes(identity.seat));
+  const definitions = useMemo(() => new Map(activePackage.cards.map(card => [card.id, card])), [activePackage]);
   const isOwner = Boolean(ownSeat?.owner);
   const movableZoneSet = new Set(activeModule.zones.filter(zone => zone.stackable).map(zone => zone.id));
   const zoneGroups = new Map(activeModule.zones.map(zone => [zone.id, zone.group ?? zone.id] as const));
@@ -628,9 +656,9 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
 
     {room.status === 'active' && match && <section className={`turn-banner ${isMyTurn ? 'turn-banner-active' : ''}`} role="status" aria-live="polite">
       <div className="turn-ring" aria-hidden="true">{isMyTurn ? '●' : '○'}</div>
-      <div><strong>{isMyTurn ? 'Your turn' : `Seat ${match.turn.seat}${activeSeat?.displayName ? ` · ${activeSeat.displayName}` : ''}'s turn`}</strong>
-        <span>Turn {match.turn.number} · {identity?.spectator ? 'Spectating' : isMyTurn ? 'End your turn when you are ready.' : 'Waiting for the active player.'}</span></div>
-      {!identity?.spectator && room.settings.format !== '1v1' && (confirmEndTurn ? <div className="turn-actions">
+      <div><strong>{phase === 'select-deck' ? 'Choose your deck' : phase === 'battlefield' ? 'Choose a Battlefield' : phase === 'mulligan' ? 'Opening hand · mulligan' : isMyTurn ? 'Your turn' : `Seat ${match.turn.seat}${activeSeat?.displayName ? ` · ${activeSeat.displayName}` : ''}'s turn`}</strong>
+        <span>{phase === 'select-deck' ? 'Every player selects a saved deck after the ready check.' : phase === 'battlefield' ? 'Seats 1 and 2 each lock one Battlefield from their hand.' : phase === 'mulligan' ? 'Keep your four cards or return up to two and draw replacements.' : `Turn ${match.turn.number} · ${identity?.spectator ? 'Spectating' : isMyTurn ? 'End your turn when you are ready.' : 'Waiting for the active player.'}`}</span></div>
+      {phase === 'playing' && !identity?.spectator && room.settings.format !== '1v1' && (confirmEndTurn ? <div className="turn-actions">
         <span>Lock in your end turn?</span>
         <button className="primary" disabled={!connected || !isMyTurn} onClick={() => {
           socket?.emit('match:end-turn', { expectedTurn: match.turn.number });
@@ -674,6 +702,15 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
       </ResizableDockColumn>
 
       <main className="match-main">
+        {phase === 'select-deck' && !identity?.spectator && <section className="panel match-setup-panel" aria-label="Choose a deck">
+          <div><h2>{hasSelectedDeck ? 'Deck locked in' : 'Choose a deck for this match'}</h2>
+            <p>{account ? `Signed in as @${account.username}. Choose one of your saved decks.` : 'Sign in or create a username-only account above, then choose your deck.'}</p></div>
+          <select aria-label="Your saved decks" disabled={!account || hasSelectedDeck} value={selectedDeckId} onChange={event => setSelectedDeckId(event.target.value)}>
+            {availableDecks.map(item => <option key={item.id} value={item.id}>{item.deck.name}</option>)}
+          </select>
+          <button className="primary" disabled={!connected || !account || !selectedDeckId || hasSelectedDeck} onClick={() => socket?.emit('match:select-deck', { deckId: selectedDeckId })}>Lock in deck</button>
+          {hasSelectedDeck && <span>Waiting for the other players…</span>}
+        </section>}
         {!identity?.spectator && room.settings.format !== '1v1' && <section className="shortcut-bar compact" aria-label="Keyboard shortcuts">
           <strong>Keyboard</strong>
           <kbd>R</kbd><span>Rotate</span>
@@ -815,6 +852,8 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
               const owned = isMyTurn && identity?.seat === card.owner;
               const movable = Boolean(zone.stackable);
               return rawPositions.map((rawPosition, copyIndex) => {
+                const battlefieldDefinition = card.definitionId ? definitions.get(card.definitionId) : undefined;
+                const art = card.faceUp ? battlefieldArt(battlefieldDefinition) : undefined;
                 const hasFreePosition = movable && (card.x !== 0 || card.y !== 0);
                 const automaticPoint = !hasFreePosition && movable
                   ? automaticZoneCardPoint(zone, card.owner, index, cards.length)
@@ -829,12 +868,13 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
                 const styleOffset = hasFreePosition || automaticPoint ? 0 : index * 7;
                 return <button
                   key={`${card.id}-${copyIndex}`}
-                  className={`card custom-zone-card ${movable ? 'movable-zone-card' : ''} ${zone.displayCopies?.length ? 'shared-card-copy' : ''} ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${card.faceUp ? '' : `back back-${cardBack.pattern}`} ${owned ? '' : 'locked'}`}
+                  className={`card custom-zone-card ${art ? 'battlefield-on-board' : ''} ${movable ? 'movable-zone-card' : ''} ${zone.displayCopies?.length ? 'shared-card-copy' : ''} ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${card.faceUp ? '' : `back back-${cardBack.pattern}`} ${owned ? '' : 'locked'}`}
                   style={{
                     left: `calc(${position.x / 10}% + ${styleOffset}px)`,
                     top: `calc(${position.y / 6}% + ${styleOffset}px)`,
                     transform: `translate(-50%,-50%) rotate(${card.rotation}deg)`,
                     zIndex: 30 + index,
+                    ...(art ? { backgroundImage: `linear-gradient(180deg,#07172344 5%,#071723ef 100%),url(${art})` } : {}),
                   }}
                   onMouseEnter={() => setHovered(card.id)}
                   onMouseLeave={() => setHovered('')}
@@ -884,8 +924,9 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
                     event.currentTarget.releasePointerCapture(event.pointerId);
                   }}
                 >
-                  <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span>
+                  {!art && <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span>}
                   <span>{card.label ?? 'Hidden card'}</span>
+                  {art && <span className="battlefield-card-rules">{String(battlefieldDefinition?.metadata.rules ?? '')}</span>}
                   <small>{zone.group === 'battlefield' ? `Battlefield · ${zone.label}` : zone.label}</small>
                 </button>;
               });
@@ -902,7 +943,19 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
             <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span><span>{card.label ?? 'Hidden card'}</span><small>P{card.owner} · {zoneLabel('discard')}</small>
           </button>;
           })}
-          {room.settings.format === '1v1' && !identity?.spectator && <DuelTurnControl
+          {phase === 'battlefield' && !identity?.spectator && <div className="duel-turn-control match-setup-control">
+            <span className="duel-turn-status">{hasPickedBattlefield ? 'Battlefield locked' : identity?.seat === 1 ? 'Choose Battlefield A' : identity?.seat === 2 ? 'Choose Battlefield B' : 'Waiting for a captain'}</span>
+            <button className="duel-end-turn-button" disabled={!connected || hasPickedBattlefield || !identity?.seat || identity.seat > 2 ||
+              !selectedCard?.definitionId || !definitions.get(selectedCard.definitionId) ||
+              definitions.get(selectedCard.definitionId)?.metadata.slot !== 'battlefields' || selectedCard.owner !== identity.seat}
+              onClick={() => socket?.emit('match:pick-battlefield', { cardId: selectedCard?.id })}>Lock in pick</button>
+          </div>}
+          {phase === 'mulligan' && !identity?.spectator && <div className="duel-turn-control match-setup-control">
+            <span className="duel-turn-status">{hasLockedMulligan ? 'Opening hand locked' : `Mulligan ${mulliganIds.length} / 2`}</span>
+            <button className="duel-end-turn-button" disabled={!connected || hasLockedMulligan}
+              onClick={() => socket?.emit('match:mulligan', { cardIds: mulliganIds })}>{mulliganIds.length ? `Replace ${mulliganIds.length} and lock in` : 'Keep hand and lock in'}</button>
+          </div>}
+          {phase === 'playing' && room.settings.format === '1v1' && !identity?.spectator && <DuelTurnControl
             status={`Turn ${match.turn.number} · ${isMyTurn ? 'Your turn' : `Seat ${match.turn.seat}'s turn`}`}
             confirming={confirmEndTurn}
             disabled={!connected || !isMyTurn}
@@ -913,29 +966,23 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
               setConfirmEndTurn(false);
             }}
           />}
-        </div>
-
-        {!identity?.spectator && room.settings.format === '1v1' && <section className="shortcut-bar compact" aria-label="Keyboard shortcuts">
-          <strong>Keyboard</strong>
-          <kbd>R</kbd><span>Rotate</span>
-          <kbd>F</kbd><span>Flip</span>
-          <kbd>P</kbd><span>Field</span>
-          <kbd>H</kbd><span>Hand</span>
-          <kbd>Del</kbd><span>Discard</span>
-          <kbd>{displayKey(bindings.moveUp)}{displayKey(bindings.moveLeft)}{displayKey(bindings.moveDown)}{displayKey(bindings.moveRight)}</kbd><span>Nudge</span>
-          <kbd>Esc</kbd><span>Clear</span>
-        </section>}
-
-        {!identity?.spectator && <section ref={handStripRef} className={`hand-strip ${fieldDragId ? 'hand-drop-active' : ''}`}>
+        {!identity?.spectator && <section ref={handStripRef} className={`hand-strip board-hand-strip ${fieldDragId ? 'hand-drop-active' : ''}`}>
           <strong>Your hand</strong>
           <div className="hand-cards">{ownHand.map(card => <button
             key={card.id}
-            className={`mini-card ${!isMyTurn ? 'locked' : ''} ${selected === card.id ? 'selected' : ''} ${dragPreview?.id === card.id ? 'drag-source' : ''}`}
+            className={`mini-card ${!isMyTurn ? 'locked' : ''} ${selected === card.id || mulliganIds.includes(card.id) ? 'selected' : ''} ${dragPreview?.id === card.id ? 'drag-source' : ''}`}
+            style={phase === 'battlefield' && card.definitionId && battlefieldArt(definitions.get(card.definitionId))
+              ? { backgroundImage: `linear-gradient(180deg,#07172344,#071723e9),url(${battlefieldArt(definitions.get(card.definitionId))})`, backgroundSize: 'cover', backgroundPosition: 'center' } : undefined}
             onMouseEnter={() => setHovered(card.id)}
             onMouseLeave={() => setHovered('')}
-            onClick={() => { setSelected(card.id); setPinned(card.id); }}
+            onClick={() => {
+              if (phase === 'mulligan') {
+                if (hasLockedMulligan) return;
+                setMulliganIds(ids => ids.includes(card.id) ? ids.filter(id => id !== card.id) : ids.length < 2 ? [...ids, card.id] : ids);
+              } else { setSelected(card.id); setPinned(card.id); }
+            }}
             onContextMenu={event => openCardContext(event, card)}
-            onDoubleClick={() => emitAction({ type: 'to-zone', id: card.id, zone: 'field' })}
+            onDoubleClick={() => { if (phase === 'playing') emitAction({ type: 'to-zone', id: card.id, zone: 'field' }); }}
             onPointerDown={event => {
               if (event.button !== 0 || !isMyTurn) return;
               handDragRef.current = { id: card.id, startX: event.clientX, startY: event.clientY };
@@ -957,7 +1004,8 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
               const drag = handDragRef.current;
               const distance = Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY);
               const rect = boardRef.current?.getBoundingClientRect();
-              if (rect && distance > 6 &&
+              const handRect = handStripRef.current?.getBoundingClientRect();
+              if (rect && distance > 6 && !(handRect && pointInRect({ x: event.clientX, y: event.clientY }, handRect)) &&
                 event.clientX >= rect.left && event.clientX <= rect.right &&
                 event.clientY >= rect.top && event.clientY <= rect.bottom) {
                 const cursorPoint = dropCursorPoint(event.clientX, event.clientY, rect);
@@ -979,6 +1027,19 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
               event.currentTarget.releasePointerCapture(event.pointerId);
             }}
           ><span>✦</span>{card.label}</button>)}</div>
+        </section>}
+
+        </div>
+
+        {!identity?.spectator && room.settings.format === '1v1' && <section className="shortcut-bar compact" aria-label="Keyboard shortcuts">
+          <strong>Keyboard</strong>
+          <kbd>R</kbd><span>Rotate</span>
+          <kbd>F</kbd><span>Flip</span>
+          <kbd>P</kbd><span>Field</span>
+          <kbd>H</kbd><span>Hand</span>
+          <kbd>Del</kbd><span>Discard</span>
+          <kbd>{displayKey(bindings.moveUp)}{displayKey(bindings.moveLeft)}{displayKey(bindings.moveDown)}{displayKey(bindings.moveRight)}</kbd><span>Nudge</span>
+          <kbd>Esc</kbd><span>Clear</span>
         </section>}
 
         {dragPreview && <div

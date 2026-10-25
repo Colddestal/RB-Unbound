@@ -7,6 +7,7 @@ import { ModuleOptions } from './module-options';
 import { Multiplayer } from './multiplayer';
 import { Table } from './table';
 import { Home } from './home';
+import { AccountControls, AccountProvider } from './account';
 
 type Mode = 'home' | 'local' | 'multiplayer' | 'decks';
 
@@ -25,6 +26,10 @@ function NavIcon({ mode }: { mode: Mode }) {
 }
 
 export function App() {
+  return <AccountProvider><AppBody /></AccountProvider>;
+}
+
+function AppBody() {
   const [mode, setMode] = useState<Mode>('home');
   const [bindings, setBindings] = useState<KeyBindings>(() => loadBindings());
   const [modulePackages, setModulePackages] = useState<ModulePackage[]>(() => loadInstalledModulePackages());
@@ -62,6 +67,7 @@ export function App() {
             onClick={() => setMode(item)}>{modeLabels[item]}</button>)}
         </nav>
         <div className="site-top-actions">
+          {import.meta.env.BASE_URL === '/' && <AccountControls />}
           <button aria-label="Modules" title="Modules" onClick={() => setShowModules(true)}>◇</button>
           <button aria-label="Options" title="Options" onClick={() => setShowControls(true)}>⚙</button>
           <a href="https://github.com/Colddestal/RB-Unbound" target="_blank" rel="noreferrer" aria-label="View RB Unbound on GitHub" title="GitHub">↗</a>
