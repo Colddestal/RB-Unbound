@@ -99,6 +99,10 @@ button:focus-visible,select:focus-visible,input:focus-visible,.card:focus-visibl
 .shortcut-bar strong{color:#dfe9f5;margin-right:3px}
 .shortcut-bar kbd{display:inline-flex;align-items:center;justify-content:center;min-width:27px;padding:4px 7px;border:1px solid #496078;border-bottom-width:2px;border-radius:6px;background:#17283a;color:#edf3fc;font:700 10px/1 ui-monospace,SFMono-Regular,Consolas,monospace;box-shadow:inset 0 -1px 0 #0005}
 .shortcut-bar.compact{margin-bottom:8px}
+.undo-controls{display:flex;gap:7px;align-items:center}
+.undo-controls button{background:#173043;color:#e6f2f2;border:1px solid #4a7784;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:700}
+.undo-controls button:disabled{opacity:.45;cursor:default}
+.multiplayer-undo-controls{margin:8px 0;flex-wrap:wrap;color:#849eae;font-size:11px}
 
 .selection-box{position:absolute;border:1px solid #8ec7ff;background:#8ec7ff24;pointer-events:none;z-index:100}
 .options-backdrop{position:fixed;inset:0;background:#020711bb;display:grid;place-items:center;padding:24px;z-index:1000}

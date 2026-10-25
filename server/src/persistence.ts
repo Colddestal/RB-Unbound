@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import type { RoomState } from '@rb-unbound/lobby';
 import type { TurnState } from '@rb-unbound/lobby';
-import type { DeckDefinition, ModulePackage, PlayerId, TableState } from '@rb-unbound/tabletop';
+import type { CardTimeline, DeckDefinition, ModulePackage, PlayerId, TableState } from '@rb-unbound/tabletop';
 
 export type MatchPhase = 'select-deck' | 'battlefield' | 'mulligan' | 'playing';
 
@@ -27,6 +27,7 @@ export type PersistedMatch = {
   selectedAccounts?: Array<[PlayerId, string]>;
   pickedBattlefields?: PlayerId[];
   mulliganLocked?: PlayerId[];
+  cardTimelines?: Array<[PlayerId, CardTimeline]>;
 };
 
 export type PersistenceSnapshot = {

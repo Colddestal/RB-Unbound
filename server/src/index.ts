@@ -28,6 +28,9 @@ import {
 } from '@rb-unbound/lobby';
 import {
   applyAction,
+  emptyCardTimeline,
+  recordCardEdit,
+  stepCardTimeline,
   builtInModulePackages,
   createInitialTableForModule,
   defaultGameModule,
@@ -38,6 +41,7 @@ import {
   migrateTableState,
   projectTable,
   type ClientTableAction,
+  type CardTimeline,
   type GameModule,
   type ModulePackage,
   type PlayerId,
@@ -78,6 +82,7 @@ type MatchRecord = {
   selectedAccounts: Map<PlayerId, string>;
   pickedBattlefields: Set<PlayerId>;
   mulliganLocked: Set<PlayerId>;
+  cardTimelines: Map<PlayerId, CardTimeline>;
 };
 
 const SESSION_TTL_MS = 30 * 60 * 1000;
@@ -101,6 +106,8 @@ const EVENT_LIMITS: Record<string, LimitRule> = {
   'match:pick-battlefield': { capacity: 4, refillPerSecond: 0.2 },
   'match:mulligan': { capacity: 4, refillPerSecond: 0.2 },
   'match:action': { capacity: 90, refillPerSecond: 30 },
+  'match:undo': { capacity: 12, refillPerSecond: 3 },
+  'match:redo': { capacity: 12, refillPerSecond: 3 },
 };
 
 const EVENT_MAX_BYTES: Record<string, number> = {
@@ -119,9 +126,11 @@ const EVENT_MAX_BYTES: Record<string, number> = {
   'match:pick-battlefield': 128,
   'match:mulligan': 512,
   'match:action': 2048,
+  'match:undo': 64,
+  'match:redo': 64,
 };
 const OBJECT_PAYLOAD_EVENTS = new Set(Object.keys(EVENT_MAX_BYTES).filter(event =>
-  event !== 'room:leave' && event !== 'match:request-state'));
+  event !== 'room:leave' && event !== 'match:request-state' && event !== 'match:undo' && event !== 'match:redo'));
 
 const siteRoot = resolve(process.cwd(), 'apps/web/dist');
 const port = Number(process.env.RB_UNBOUND_PORT ?? 3001);
@@ -322,6 +331,7 @@ function makeSnapshot(): PersistenceSnapshot {
       selectedAccounts: [...match.selectedAccounts.entries()],
       pickedBattlefields: [...match.pickedBattlefields],
       mulliganLocked: [...match.mulliganLocked],
+      cardTimelines: [...match.cardTimelines.entries()],
     })),
     modules: [...modulePackages.values()],
     sessions: [...sessions.values()].map(session => ({
@@ -561,6 +571,8 @@ function emitMatchViews(room: RoomState): void {
       selectedSeats: [...match.selectedDecks.keys()],
       pickedSeats: [...match.pickedBattlefields],
       mulliganSeats: [...match.mulliganLocked],
+      canUndo: Boolean(match.cardTimelines.get(seat.seat as PlayerId)?.past.length),
+      canRedo: Boolean(match.cardTimelines.get(seat.seat as PlayerId)?.future.length),
       table: projectTable(
         match.table,
         seat.seat as PlayerId,
@@ -580,6 +592,8 @@ function emitMatchViews(room: RoomState): void {
       selectedSeats: [...match.selectedDecks.keys()],
       pickedSeats: [...match.pickedBattlefields],
       mulliganSeats: [...match.mulliganLocked],
+      canUndo: false,
+      canRedo: false,
       table: projectTable(match.table, undefined, undefined, policy.publicZones, policy.publicCountZones),
     });
   }
@@ -715,6 +729,8 @@ async function restoreState(): Promise<void> {
       selectedAccounts: new Map(record.selectedAccounts ?? []),
       pickedBattlefields: new Set(record.pickedBattlefields ?? []),
       mulliganLocked: new Set(record.mulliganLocked ?? []),
+      cardTimelines: new Map(Array.isArray(record.cardTimelines) ? record.cardTimelines.filter(entry =>
+        Array.isArray(entry) && [1, 2, 3, 4].includes(entry[0]) && Array.isArray(entry[1]?.past) && Array.isArray(entry[1]?.future)) : []),
     });
   }
 
@@ -987,6 +1003,7 @@ io.on('connection', socket => {
       phase: requiresDeckSelection(started) ? 'select-deck' : 'playing',
       selectedDecks: new Map(), selectedAccounts: new Map(),
       pickedBattlefields: new Set(), mulliganLocked: new Set(),
+      cardTimelines: new Map(),
     });
     emitRoom(started);
     io.to(room.code).emit('room:started', { code: room.code, format: room.settings.format, ruleset: room.settings.ruleset });
@@ -1115,6 +1132,8 @@ io.on('connection', socket => {
     }
 
     match.table = updated;
+    match.cardTimelines.set(session.seat, recordCardEdit(
+      match.cardTimelines.get(session.seat) ?? emptyCardTimeline(), before, updated, action));
     match.revision += 1;
     match.lastActionSequence.set(session.memberId, sequence);
 
@@ -1128,6 +1147,29 @@ io.on('connection', socket => {
     emitMatchViews(updatedRoom);
     scheduleSave();
   });
+
+  for (const direction of ['undo', 'redo'] as const) {
+    socket.on(`match:${direction}`, () => {
+      const session = currentSession(socket);
+      const room = session ? rooms.get(session.roomCode) : undefined;
+      const match = room ? matches.get(room.code) : undefined;
+      if (!session?.seat || !room || room.status !== 'active' || !match || match.phase !== 'playing' ||
+        session.spectator || match.turn.seat !== session.seat) return fail(socket, 'Wait for your turn to change cards.');
+      const result = stepCardTimeline(match.table, match.cardTimelines.get(session.seat) ?? emptyCardTimeline(), session.seat, direction);
+      if (!result) return fail(socket, `No ${direction} step is available for your cards.`);
+      match.table = result.table;
+      match.cardTimelines.set(session.seat, result.timeline);
+      match.revision += 1;
+      const updatedRoom = appendHistory(room, {
+        id: randomUUID(), text: `Seat ${session.seat} used ${direction}.`, createdAt: new Date().toISOString(),
+        kind: 'zone', actorSeat: session.seat,
+      });
+      rooms.set(room.code, updatedRoom);
+      emitRoom(updatedRoom);
+      emitMatchViews(updatedRoom);
+      scheduleSave();
+    });
+  }
 
   socket.on('match:request-state', () => {
     const session = currentSession(socket);

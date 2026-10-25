@@ -12,6 +12,9 @@ import { automaticZoneCardPoint, orderZoneCards, runeColor } from './zone-card-l
 import { spatialDropZone } from './spatial-zone-drop';
 import {
   applyAction,
+  emptyCardTimeline,
+  recordCardEdit,
+  stepCardTimeline,
   canManipulate,
   builtInModulePackages,
   createInitialTableForModule,
@@ -21,6 +24,7 @@ import {
   zoneBehavior,
   modulePackageKey,
   type Card,
+  type CardTimeline,
   type DeckDefinition,
   type GameModule,
   type ModulePackage,
@@ -82,6 +86,9 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
   };
   const [table, setTable] = useState<TableState>(() =>
     createInitialTableForModule([1, 2], defaultPackage.module, defaultPackage.cards));
+  const tableRef = useRef(table);
+  const [timelines, setTimelines] = useState<Map<PlayerId, CardTimeline>>(() => new Map());
+  const timelinesRef = useRef(timelines);
   const [viewer, setViewer] = useState<PlayerId>(1);
   const [turnNumber, setTurnNumber] = useState(1);
   const [confirmEndTurn, setConfirmEndTurn] = useState(false);
@@ -94,6 +101,7 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
   const [history, setHistory] = useState<DockHistoryEntry[]>([]);
   const [dragPreview, setDragPreview] = useState<{ id: string; label: string; x: number; y: number } | null>(null);
   const [fieldDragId, setFieldDragId] = useState('');
+  const [boardDragPoint, setBoardDragPoint] = useState<{ id: string; x: number; y: number } | null>(null);
   const [cardContext, setCardContext] = useState<CardContextState | null>(null);
   const historyCounterRef = useRef(0);
   const boardRef = useRef<HTMLDivElement>(null);
@@ -135,8 +143,31 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
     if (sourceGroup !== 'battlefield') return undefined;
     return spatialDropZone(activeModule, point, card.owner, sourceGroup);
   };
-  const execute = (action: Parameters<typeof applyAction>[1]) =>
-    setTable(state => applyAction(state, action, allowedZones, stackableZones, zoneGroups));
+  const execute = (action: Parameters<typeof applyAction>[1]) => {
+    const before = tableRef.current;
+    const after = applyAction(before, action, allowedZones, stackableZones, zoneGroups);
+    if (after === before) return;
+    tableRef.current = after;
+    setTable(after);
+    const actor = 'actor' in action ? action.actor : 'player' in action ? action.player : undefined;
+    if (actor) {
+      const next = new Map(timelinesRef.current);
+      next.set(actor, recordCardEdit(next.get(actor) ?? emptyCardTimeline(), before, after, action));
+      timelinesRef.current = next;
+      setTimelines(next);
+    }
+  };
+  const stepHistory = (direction: 'undo' | 'redo') => {
+    const result = stepCardTimeline(tableRef.current, timelinesRef.current.get(viewer) ?? emptyCardTimeline(), viewer, direction);
+    if (!result) return;
+    tableRef.current = result.table;
+    setTable(result.table);
+    const next = new Map(timelinesRef.current);
+    next.set(viewer, result.timeline);
+    timelinesRef.current = next;
+    setTimelines(next);
+    addLocalHistory(`Player ${viewer} used ${direction}.`);
+  };
   const selectedCard = table.cards.find(card => card.id === selected);
   const selectedCards = table.cards.filter(card => multiSelected.includes(card.id));
   const inspectorCard = table.cards.find(card => card.id === (hovered || pinned));
@@ -225,10 +256,11 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
     const replacedZones = new Set(deck.sections
       ? ['deck', 'commander', 'vanguard', 'resource-deck'] : ['deck']);
 
-    setTable(state => ({
-      ...state,
-      cards: [...state.cards.filter(card => card.owner !== player || !replacedZones.has(card.zone)), ...cards],
-    }));
+    const nextTable = { ...tableRef.current, cards: [...tableRef.current.cards.filter(card => card.owner !== player || !replacedZones.has(card.zone)), ...cards] };
+    tableRef.current = nextTable;
+    setTable(nextTable);
+    timelinesRef.current = new Map();
+    setTimelines(timelinesRef.current);
     setSelected('');
     setMultiSelected([]);
     setPinned('');
@@ -240,12 +272,11 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
   const targets = selectedCards.length ? selectedCards : (selectedCard ? [selectedCard] : []);
 
   const moveCardToZone = (card: Card, zone: Card['zone']) => {
-    execute({ type: 'to-zone', id: card.id, zone, actor: viewer });
     const targetZone = activeModule.zones.find(item => item.id === zone);
     const position = targetZone?.kind === 'custom' && targetZone.stackable
       ? canonicalZonePosition(targetZone, card.owner)
       : undefined;
-    if (position) execute({ type: 'move', id: card.id, actor: viewer, x: position.x, y: position.y });
+    execute({ type: 'to-zone', id: card.id, zone, actor: viewer, ...position });
   };
 
   const moveTargets = (zone: Card['zone']) => {
@@ -311,6 +342,12 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
       const target = event.target as HTMLElement | null;
       if (target?.matches('input, textarea, select, [contenteditable="true"]')) return;
 
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && (event.code === 'KeyZ' || event.code === 'KeyY')) {
+        stepHistory(event.code === 'KeyY' || event.shiftKey ? 'redo' : 'undo');
+        event.preventDefault();
+        return;
+      }
+
       const action = actionForCode(bindings, event.code);
 
       if (action === 'clear') {
@@ -354,7 +391,8 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
 
     if (mode === 'field') {
       const target = card.stackOn ? table.cards.find(item => item.id === card.stackOn) : undefined;
-      const point = toViewerPoint({ x: target?.x ?? card.x, y: target?.y ?? card.y }, viewer, '1v1');
+      const drag = boardDragPoint?.id === card.id ? boardDragPoint : undefined;
+      const point = toViewerPoint({ x: drag?.x ?? target?.x ?? card.x, y: drag?.y ?? target?.y ?? card.y }, viewer, '1v1');
       style.left = `${point.x / 10}%`;
       style.top = `${point.y / 6}%`;
       style.transform = `translate(-50%,-50%) translate(${target ? 9 : 0}px, ${target ? 9 : 0}px) rotate(${card.rotation}deg)`;
@@ -435,18 +473,13 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
         const rect = boardRef.current?.getBoundingClientRect();
         if (!rect || !pointInRect({ x: event.clientX, y: event.clientY }, rect)) return;
         const point = dropCursorPoint(event.clientX, event.clientY, rect);
-        execute({
-          type: 'move',
-          id: card.id,
-          actor: viewer,
-          x: point.x,
-          y: point.y,
-        });
+        setBoardDragPoint({ id: card.id, ...point });
       }}
       onPointerCancel={event => {
         handDragRef.current = null;
         setDragPreview(null);
         setFieldDragId('');
+        setBoardDragPoint(null);
         if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
       }}
       onPointerUp={event => {
@@ -478,6 +511,7 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
         handDragRef.current = null;
         setDragPreview(null);
         setFieldDragId('');
+        setBoardDragPoint(null);
         event.currentTarget.releasePointerCapture(event.pointerId);
       }}
     >
@@ -491,7 +525,11 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
     const nextPackage = modulePackages.find(bundle => modulePackageKey(bundle.module) === key);
     if (!nextPackage) return;
     setModuleKey(key);
-    setTable(createInitialTableForModule([1, 2], nextPackage.module, nextPackage.cards));
+    const nextTable = createInitialTableForModule([1, 2], nextPackage.module, nextPackage.cards);
+    tableRef.current = nextTable;
+    setTable(nextTable);
+    timelinesRef.current = new Map();
+    setTimelines(timelinesRef.current);
     setViewer(1);
     setTurnNumber(1);
     setConfirmEndTurn(false);
@@ -576,14 +614,15 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
             const automaticPoint = !hasFreePosition && zone.stackable
               ? automaticZoneCardPoint(zone, card.owner, index, cards.length)
               : undefined;
-            const position = hasFreePosition
-              ? toViewerPoint({ x: card.x, y: card.y }, viewer, '1v1')
+            const drag = boardDragPoint?.id === card.id ? boardDragPoint : undefined;
+            const position = drag || hasFreePosition
+              ? toViewerPoint(drag ?? { x: card.x, y: card.y }, viewer, '1v1')
               : automaticPoint
                 ? toViewerPoint(automaticPoint, viewer, '1v1')
                 : (!zone.ownerScoped && zone.displayCopies?.length
                   ? toViewerPoint(rawPosition, viewer, '1v1')
                   : rawPosition);
-            const styleOffset = hasFreePosition || automaticPoint ? 0 : index * 7;
+            const styleOffset = drag || hasFreePosition || automaticPoint ? 0 : index * 7;
             const owned = card.owner === viewer;
             const movable = Boolean(zone.stackable);
             return <button
@@ -619,10 +658,11 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
                 const rect = boardRef.current?.getBoundingClientRect();
                 if (!rect || !pointInRect({ x: event.clientX, y: event.clientY }, rect)) return;
                 const point = dropCursorPoint(event.clientX, event.clientY, rect);
-                execute({ type: 'move', id: card.id, actor: viewer, x: point.x, y: point.y });
+                setBoardDragPoint({ id: card.id, ...point });
               }}
               onPointerCancel={event => {
                 setFieldDragId('');
+                setBoardDragPoint(null);
                 if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
               }}
               onPointerUp={event => {
@@ -640,6 +680,7 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
                   } else execute({ type: 'move', id: card.id, actor: viewer, ...point });
                 }
                 setFieldDragId('');
+                setBoardDragPoint(null);
                 event.currentTarget.releasePointerCapture(event.pointerId);
               }}
             >
@@ -769,6 +810,11 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
         />
       </div>
       <section className="shortcut-bar below-board-shortcuts" aria-label="Keyboard shortcuts">
+        <div className="undo-controls">
+          <button type="button" disabled={!timelines.get(viewer)?.past.length} onClick={() => stepHistory('undo')}>Undo</button>
+          <button type="button" disabled={!timelines.get(viewer)?.future.length} onClick={() => stepHistory('redo')}>Redo</button>
+        </div>
+        <kbd>Ctrl Z</kbd><span>Undo</span><kbd>Ctrl Y</kbd><span>Redo</span>
         <strong>Keyboard</strong>
         <kbd>R</kbd><span>Rotate</span>
         <kbd>F</kbd><span>Flip</span>
