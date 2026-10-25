@@ -3,6 +3,7 @@ import {
   DEFAULT_BINDINGS,
   actionForCode,
   displayKey,
+  historyDirectionForKey,
   loadBindings,
   saveBindings,
 } from '../controls';
@@ -27,9 +28,27 @@ describe('keyboard controls', () => {
   });
 
   it('persists custom bindings', () => {
-    const custom = { ...DEFAULT_BINDINGS, rotate: 'KeyQ' };
+    const custom = { ...DEFAULT_BINDINGS, rotate: 'KeyT' };
     saveBindings(custom);
     expect(loadBindings()).toEqual(custom);
+  });
+
+  it('uses Q and E without a modifier for Undo and Redo', () => {
+    const event = (code: string, ctrlKey = false) => ({ code, ctrlKey, metaKey: false, altKey: false });
+    expect(historyDirectionForKey(event('KeyQ'))).toBe('undo');
+    expect(historyDirectionForKey(event('KeyE'))).toBe('redo');
+    expect(historyDirectionForKey(event('KeyQ', true))).toBeUndefined();
+    expect(historyDirectionForKey(event('KeyZ', true))).toBeUndefined();
+  });
+
+  it('releases Q and E from previously saved controls while keeping other changes', () => {
+    window.localStorage.setItem('rb-unbound-keybindings-v1', JSON.stringify({
+      ...DEFAULT_BINDINGS,
+      rotate: 'KeyQ',
+      flip: 'KeyE',
+      moveHand: 'KeyT',
+    }));
+    expect(loadBindings()).toEqual({ ...DEFAULT_BINDINGS, moveHand: 'KeyT' });
   });
 
   it('falls back to defaults if stored bindings contain duplicates', () => {

@@ -25,6 +25,15 @@ export const DEFAULT_BINDINGS: KeyBindings = {
   clear: 'Escape',
 };
 
+export const HISTORY_KEYS = { undo: 'KeyQ', redo: 'KeyE' } as const;
+
+export function historyDirectionForKey(event: Pick<KeyboardEvent, 'code' | 'ctrlKey' | 'metaKey' | 'altKey'>): 'undo' | 'redo' | undefined {
+  if (event.ctrlKey || event.metaKey || event.altKey) return undefined;
+  if (event.code === HISTORY_KEYS.undo) return 'undo';
+  if (event.code === HISTORY_KEYS.redo) return 'redo';
+  return undefined;
+}
+
 export const CONTROL_LABELS: Record<ControlAction, string> = {
   moveUp: 'Move up',
   moveDown: 'Move down',
@@ -46,6 +55,11 @@ export function loadBindings(): KeyBindings {
     if (!raw) return { ...DEFAULT_BINDINGS };
     const parsed = JSON.parse(raw) as Partial<KeyBindings>;
     const merged = { ...DEFAULT_BINDINGS, ...parsed };
+    // Older saved controls could assign Q or E to a different action.
+    for (const action of Object.keys(merged) as ControlAction[]) {
+      if (merged[action] === HISTORY_KEYS.undo || merged[action] === HISTORY_KEYS.redo)
+        merged[action] = DEFAULT_BINDINGS[action];
+    }
     const values = Object.values(merged);
     if (new Set(values).size !== values.length) return { ...DEFAULT_BINDINGS };
     return merged;

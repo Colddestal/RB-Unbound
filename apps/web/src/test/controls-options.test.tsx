@@ -21,9 +21,19 @@ describe('ControlsOptions', () => {
   it('captures a new key for an action', () => {
     const { onChange } = renderOptions();
     fireEvent.click(screen.getByRole('button', { name: 'R' }));
-    fireEvent.keyDown(window, { code: 'KeyQ', key: 'q' });
+    fireEvent.keyDown(window, { code: 'KeyT', key: 't' });
 
-    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ rotate: 'KeyQ' }));
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ rotate: 'KeyT' }));
+  });
+
+  it('keeps Q and E available for Undo and Redo', () => {
+    const { onChange } = renderOptions();
+    fireEvent.click(screen.getByRole('button', { name: 'R' }));
+    fireEvent.keyDown(window, { code: 'KeyQ', key: 'q' });
+    expect(screen.getByText('Q is reserved for Undo.')).toBeInTheDocument();
+    fireEvent.keyDown(window, { code: 'KeyE', key: 'e' });
+    expect(screen.getByText('E is reserved for Redo.')).toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it('rejects duplicate key assignments', () => {
@@ -36,7 +46,7 @@ describe('ControlsOptions', () => {
   });
 
   it('resets all controls to defaults', () => {
-    const custom = { ...DEFAULT_BINDINGS, rotate: 'KeyQ' };
+    const custom = { ...DEFAULT_BINDINGS, rotate: 'KeyT' };
     const { onChange } = renderOptions(custom);
     fireEvent.click(screen.getByRole('button', { name: 'Reset to defaults' }));
 
