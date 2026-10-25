@@ -23,8 +23,8 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const token = window.localStorage.getItem(TOKEN_KEY);
     if (token) void accountRequest<{ username: string }>(token, '/account/me')
-      .then(value => setAccount({ token, username: value.username }))
-      .catch(() => window.localStorage.removeItem(TOKEN_KEY));
+      .then(value => { if (window.localStorage.getItem(TOKEN_KEY) === token) setAccount({ token, username: value.username }); })
+      .catch(() => { if (window.localStorage.getItem(TOKEN_KEY) === token) window.localStorage.removeItem(TOKEN_KEY); });
   }, []);
   const signIn = async (username: string, password: string, register: boolean) => {
     const response = await fetch(`/api/account/${register ? 'register' : 'login'}`, {

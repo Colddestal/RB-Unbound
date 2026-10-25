@@ -31,6 +31,6 @@ journalctl --user -u rb-unbound-update.service -n 80 --no-pager
 curl -fsS http://127.0.0.1:3001/healthz
 ```
 
-The active revision is `readlink -f "$HOME/rb-unbound/current"`. Match snapshots stay at `$HOME/rb-unbound/state/server-state.json`, outside the versioned releases. A copy from immediately before the latest update is at `$HOME/rb-unbound/state/pre-update.json` when a snapshot existed. The updater retains the current and previous releases plus two other recent versions.
+The active revision is `readlink -f "$HOME/rb-unbound/current"`. Match snapshots and accounts stay at `$HOME/rb-unbound/state/server-state.json` and `$HOME/rb-unbound/state/accounts.json`, outside the versioned releases. Back up both files. A match snapshot copy from immediately before the latest update is at `$HOME/rb-unbound/state/pre-update.json` when a snapshot existed. The updater retains the current and previous releases plus two other recent versions.
 
 The update timer deploys merged `main` commits automatically. Use protected branch checks and review before merging changes. A later incompatible state schema needs a migration and backup plan before it reaches `main`.

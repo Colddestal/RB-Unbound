@@ -110,17 +110,24 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
   const fileRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSave = useRef<{ token: string; id: string; deck: DeckDefinition } | null>(null);
-  const saveQueue = useRef(Promise.resolve());
+  const saveQueue = useRef<Promise<boolean>>(Promise.resolve(true));
   const flushSave = () => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = null;
     const pending = pendingSave.current;
     pendingSave.current = null;
     if (!pending) return saveQueue.current;
-    saveQueue.current = saveQueue.current.catch(() => undefined).then(() =>
-      accountRequest(pending.token, `/decks/${pending.id}`, 'PUT', { deck: pending.deck })
-        .then(() => setMessage('Saved to your account.'))
-        .catch(() => setMessage('Could not save this deck to the host. Export a copy before leaving.')));
+    saveQueue.current = saveQueue.current.catch(() => false).then(async () => {
+      try {
+        await accountRequest(pending.token, `/decks/${pending.id}`, 'PUT', { deck: pending.deck });
+        setMessage('Saved to your account.');
+        return true;
+      } catch {
+        if (!pendingSave.current) pendingSave.current = pending;
+        setMessage('Could not save this deck to the host. Export a copy before leaving.');
+        return false;
+      }
+    });
     return saveQueue.current;
   };
   useEffect(() => {
@@ -166,7 +173,7 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
 
   const createDeck = async () => {
     try {
-      await flushSave();
+      if (!await flushSave()) return;
       const item = account
         ? await accountRequest<SavedDeck>(account.token, '/decks', 'POST', { moduleId: module.id })
         : { id: crypto.randomUUID(), deck: { ...starterDeckForModule(module, catalog), name: `Deck ${library.length + 1}` } };
@@ -179,7 +186,7 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
   const deleteDeck = async () => {
     if (library.length < 2) { setMessage('Keep at least one deck in the library.'); return; }
     try {
-      await flushSave();
+      if (!await flushSave()) return;
       if (account) await accountRequest(account.token, `/decks/${selectedId}`, 'DELETE');
       const next = library.filter(item => item.id !== selectedId);
       setLibrary(next); setSelectedId(next[0].id); setDeck(next[0].deck);
@@ -212,7 +219,7 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
   const importDeck = async (file?: File) => {
     if (!file) return;
     try {
-      await flushSave();
+      if (!await flushSave()) return;
       if (file.size > 250_000) throw new Error('too large');
       const parsed: unknown = JSON.parse(await file.text());
       if (!isDeckDefinition(parsed, module, catalog)) throw new Error('invalid');
@@ -239,9 +246,12 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
     <div className="deck-editor-settings">
       <label>Decks
         <select value={selectedId} onChange={event => {
-          void flushSave();
-          const item = library.find(item => item.id === event.target.value);
-          if (item) { setSelectedId(item.id); setDeck(item.deck); setMessage(''); setPreview(null); }
+          const id = event.target.value;
+          void flushSave().then(saved => {
+            if (!saved) return;
+            const item = library.find(entry => entry.id === id);
+            if (item) { setSelectedId(item.id); setDeck(item.deck); setMessage(''); setPreview(null); }
+          });
         }}>{library.map(item => <option key={item.id} value={item.id}>{item.deck.name}</option>)}</select>
       </label>
       <button type="button" onClick={() => { void createDeck(); }}>Create New Deck +</button>
@@ -331,8 +341,8 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
       <button onClick={() => { void deleteDeck(); }}>Delete deck</button>
       <button onClick={() => fileRef.current?.click()}>Import deck</button>
       <button onClick={download}>Export deck</button>
-      <button className="primary" disabled={!usable} onClick={() => { void flushSave().then(() => { onLoadDeck(deck, 1); setMessage(`Loaded ${deck.name} to Seat 1 for local testing.`); }); }}>Test as Seat 1</button>
-      <button className="primary" disabled={!usable} onClick={() => { void flushSave().then(() => { onLoadDeck(deck, 2); setMessage(`Loaded ${deck.name} to Seat 2 for local testing.`); }); }}>Test as Seat 2</button>
+      <button className="primary" disabled={!usable} onClick={() => { void flushSave().then(saved => { if (saved) { onLoadDeck(deck, 1); setMessage(`Loaded ${deck.name} to Seat 1 for local testing.`); } }); }}>Test as Seat 1</button>
+      <button className="primary" disabled={!usable} onClick={() => { void flushSave().then(saved => { if (saved) { onLoadDeck(deck, 2); setMessage(`Loaded ${deck.name} to Seat 2 for local testing.`); } }); }}>Test as Seat 2</button>
     </div>
     <input ref={fileRef} hidden type="file" accept=".json,application/json" onChange={event => {
       void importDeck(event.target.files?.[0]); event.target.value = '';

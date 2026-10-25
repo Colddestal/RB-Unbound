@@ -43,7 +43,7 @@ describe('DeckTools', () => {
     openEditor();
     expect(screen.getByLabelText('Deck name')).toHaveValue('Mira test deck');
     fireEvent.change(screen.getByLabelText('Decks'), { target: { value: (screen.getByRole('combobox', { name: 'Decks' }) as HTMLSelectElement).options[1].value } });
-    expect(screen.getByText(/Runes needs 1 more card/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText(/Runes needs 1 more card/)).toBeInTheDocument());
   });
 
   it('warns for missing sections, excess cards, and mismatched identities', () => {

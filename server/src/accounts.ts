@@ -19,6 +19,8 @@ type Store = { version: 1; accounts: Account[]; logins: Login[] };
 const store: Store = { version: 1, accounts: [], logins: [] };
 let pendingSave = Promise.resolve();
 
+export function flushAccounts(): Promise<void> { return pendingSave; }
+
 export async function loadAccounts(): Promise<void> {
   try {
     const value = JSON.parse(await readFile(path, 'utf8')) as Partial<Store>;
@@ -125,6 +127,10 @@ export function playableAccountDeck(account: Account, id: string): DeckDefinitio
 const attempts = new Map<string, { count: number; since: number }>();
 function mayAttempt(key: string): boolean {
   const now = Date.now();
+  if (attempts.size > 10_000) {
+    for (const [entry, value] of attempts) if (now - value.since > 10 * 60_000) attempts.delete(entry);
+    if (attempts.size > 10_000) attempts.delete(attempts.keys().next().value!);
+  }
   const current = attempts.get(key);
   const next = !current || now - current.since > 10 * 60_000 ? { count: 1, since: now } : { ...current, count: current.count + 1 };
   attempts.set(key, next);
@@ -136,9 +142,11 @@ function respond(res: ServerResponse, status: number, data: unknown): void {
 }
 async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
   let text = '';
+  let bytes = 0;
   for await (const chunk of req) {
+    bytes += Buffer.byteLength(chunk);
+    if (bytes > 60_000) throw new Error('Request too large');
     text += String(chunk);
-    if (text.length > 60_000) throw new Error('Request too large');
   }
   const parsed: unknown = JSON.parse(text);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Invalid JSON');
@@ -146,11 +154,17 @@ async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
 }
 
 export async function handleAccountApi(req: IncomingMessage, res: ServerResponse): Promise<boolean> {
-  const url = new URL(req.url ?? '/', 'http://localhost');
+  let url: URL;
+  try { url = new URL(req.url ?? '/', 'http://localhost'); }
+  catch { respond(res, 400, { error: 'Invalid request URL.' }); return true; }
   if (!url.pathname.startsWith('/api/')) return false;
   const origin = req.headers.origin;
-  if (origin && origin !== 'http://localhost:5173' && origin !== 'http://127.0.0.1:5173' && new URL(origin).host !== req.headers.host) {
-    respond(res, 403, { error: 'Wrong origin.' }); return true;
+  if (origin) {
+    try {
+      if (origin !== 'http://localhost:5173' && origin !== 'http://127.0.0.1:5173' && new URL(origin).host !== req.headers.host) {
+        respond(res, 403, { error: 'Wrong origin.' }); return true;
+      }
+    } catch { respond(res, 403, { error: 'Wrong origin.' }); return true; }
   }
   try {
     if (url.pathname === '/api/account/register' && req.method === 'POST') {
@@ -162,7 +176,9 @@ export async function handleAccountApi(req: IncomingMessage, res: ServerResponse
     }
     if (url.pathname === '/api/account/login' && req.method === 'POST') {
       const input = await body(req);
-      if (!mayAttempt(`login:${normalize(input.username)}`)) { respond(res, 429, { error: 'Try again later.' }); return true; }
+      const name = normalize(input.username);
+      if (!/^[a-z0-9_]{3,24}$/.test(name)) { respond(res, 401, { error: 'Incorrect username or password.' }); return true; }
+      if (!mayAttempt(`login:${name}`)) { respond(res, 429, { error: 'Try again later.' }); return true; }
       const result = await login(input.username, input.password);
       respond(res, result ? 200 : 401, result ?? { error: 'Incorrect username or password.' });
       return true;
