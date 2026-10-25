@@ -12,7 +12,7 @@ const scrypt = promisify(scryptCallback);
 const path = resolve(process.env.RB_UNBOUND_ACCOUNT_PATH ?? '.data/accounts.json');
 const TOKEN_LIFETIME = 30 * 24 * 60 * 60 * 1000;
 
-type AccountDeck = { id: string; deck: DeckDefinition };
+type AccountDeck = { id: string; deck: DeckDefinition; isPrivate?: boolean };
 type Account = { id: string; username: string; salt: string; passwordHash: string; decks: AccountDeck[] };
 type Login = { tokenHash: string; accountId: string; expiresAt: number };
 type Store = { version: 1; accounts: Account[]; logins: Login[] };
@@ -63,7 +63,7 @@ export async function register(usernameInput: unknown, password: unknown): Promi
   const salt = randomBytes(16).toString('hex');
   const passwordHash = (await scrypt(password, salt, 64) as Buffer).toString('hex');
   if (store.accounts.some(item => item.username === username)) return null;
-  const starter = builtInModulePackages.map(bundle => ({ id: randomUUID(), deck: starterDeckForModule(bundle.module, bundle.cards) }));
+  const starter = builtInModulePackages.map(bundle => ({ id: randomUUID(), deck: starterDeckForModule(bundle.module, bundle.cards), isPrivate: true }));
   const account: Account = { id: randomUUID(), username, salt, passwordHash, decks: starter };
   store.accounts.push(account);
   const token = newLogin(account);
@@ -87,6 +87,25 @@ export async function logout(token: string): Promise<void> {
 }
 
 export function listDecks(account: Account): AccountDeck[] { return account.decks; }
+export function discoverDecks(query: string, moduleId: string, page: number) {
+  const search = query.trim().toLowerCase();
+  const publicDecks = store.accounts.flatMap(owner => owner.decks
+    .filter(item => item.isPrivate === false &&
+      (!moduleId || item.deck.moduleId === moduleId) &&
+      (!search || item.deck.name.toLowerCase().includes(search) || owner.username.includes(search)))
+    .map(item => ({ id: item.id, name: item.deck.name, author: owner.username,
+      moduleId: item.deck.moduleId, moduleVersion: item.deck.moduleVersion,
+      cardCount: item.deck.cards.length })));
+  const start = page * 24;
+  return { decks: publicDecks.slice(start, start + 24), total: publicDecks.length, page };
+}
+export function publicDeck(id: string) {
+  for (const owner of store.accounts) {
+    const item = owner.decks.find(entry => entry.id === id && entry.isPrivate === false);
+    if (item) return { id: item.id, author: owner.username, deck: item.deck };
+  }
+  return null;
+}
 export function accountDeck(account: Account, id: string): DeckDefinition | undefined {
   return account.decks.find(item => item.id === id)?.deck;
 }
@@ -94,21 +113,33 @@ export async function createAccountDeck(account: Account, moduleId: string): Pro
   const bundle = builtInModulePackages.find(item => item.module.id === moduleId);
   if (!bundle || account.decks.length >= 100) return null;
   const deck = { ...starterDeckForModule(bundle.module, bundle.cards), name: `New ${bundle.module.name} deck` };
-  const item = { id: randomUUID(), deck };
+  const item = { id: randomUUID(), deck, isPrivate: false };
   account.decks.push(item);
   await save();
   return item;
 }
-export async function saveAccountDeck(account: Account, id: string, value: unknown): Promise<boolean> {
+export async function saveAccountDeck(account: Account, id: string, value: unknown, isPrivate?: unknown): Promise<boolean> {
   const item = account.decks.find(entry => entry.id === id);
   if (!item || !value || typeof value !== 'object') return false;
   const candidate = value as DeckDefinition;
   const bundle = builtInModulePackages.find(bundle => bundle.module.id === candidate.moduleId && bundle.module.version === candidate.moduleVersion);
   if (!bundle || !isDeckDefinition(candidate, bundle.module, bundle.cards)) return false;
   if (JSON.stringify(candidate).length > 30_000) return false;
+  if (isPrivate !== undefined && typeof isPrivate !== 'boolean') return false;
   item.deck = candidate;
+  if (typeof isPrivate === 'boolean') item.isPrivate = isPrivate;
   await save();
   return true;
+}
+export async function copyPublicDeck(account: Account, id: string): Promise<AccountDeck | null> {
+  const source = publicDeck(id);
+  if (!source || account.decks.length >= 100) return null;
+  const bundle = builtInModulePackages.find(item => item.module.id === source.deck.moduleId && item.module.version === source.deck.moduleVersion);
+  if (!bundle || !isDeckDefinition(source.deck, bundle.module, bundle.cards)) return null;
+  const item: AccountDeck = { id: randomUUID(), deck: structuredClone(source.deck), isPrivate: false };
+  account.decks.push(item);
+  await save();
+  return item;
 }
 export async function deleteAccountDeck(account: Account, id: string): Promise<boolean> {
   const length = account.decks.length;
@@ -167,6 +198,17 @@ export async function handleAccountApi(req: IncomingMessage, res: ServerResponse
     } catch { respond(res, 403, { error: 'Wrong origin.' }); return true; }
   }
   try {
+    if (url.pathname === '/api/discover/decks' && req.method === 'GET') {
+      const query = (url.searchParams.get('q') ?? '').slice(0, 80);
+      const moduleId = (url.searchParams.get('moduleId') ?? '').slice(0, 64);
+      const page = Math.max(0, Math.min(1000, Number.parseInt(url.searchParams.get('page') ?? '0', 10) || 0));
+      respond(res, 200, discoverDecks(query, moduleId, page)); return true;
+    }
+    const discoveryMatch = /^\/api\/discover\/decks\/([0-9a-f-]{36})$/.exec(url.pathname);
+    if (discoveryMatch && req.method === 'GET') {
+      const found = publicDeck(discoveryMatch[1]);
+      respond(res, found ? 200 : 404, found ?? { error: 'Deck is unavailable.' }); return true;
+    }
     if (url.pathname === '/api/account/register' && req.method === 'POST') {
       const input = await body(req);
       if (!mayAttempt(`register:${req.socket.remoteAddress}`)) { respond(res, 429, { error: 'Try again later.' }); return true; }
@@ -194,10 +236,15 @@ export async function handleAccountApi(req: IncomingMessage, res: ServerResponse
       const created = typeof input.moduleId === 'string' ? await createAccountDeck(account, input.moduleId) : null;
       respond(res, created ? 201 : 400, created ?? { error: 'Cannot create another deck.' }); return true;
     }
+    const copyMatch = /^\/api\/decks\/([0-9a-f-]{36})\/copy$/.exec(url.pathname);
+    if (copyMatch && req.method === 'POST') {
+      const copied = await copyPublicDeck(account, copyMatch[1]);
+      respond(res, copied ? 201 : 404, copied ?? { error: 'Public deck is unavailable or your library is full.' }); return true;
+    }
     const match = /^\/api\/decks\/([0-9a-f-]{36})$/.exec(url.pathname);
     if (match && req.method === 'PUT') {
       const input = await body(req);
-      const ok = await saveAccountDeck(account, match[1], input.deck);
+      const ok = await saveAccountDeck(account, match[1], input.deck, input.isPrivate);
       respond(res, ok ? 200 : 400, ok ? { ok: true } : { error: 'Deck is invalid or no longer exists.' }); return true;
     }
     if (match && req.method === 'DELETE') {

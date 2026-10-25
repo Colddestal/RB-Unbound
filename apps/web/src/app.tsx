@@ -7,12 +7,13 @@ import { ModuleOptions } from './module-options';
 import { Multiplayer } from './multiplayer';
 import { Table } from './table';
 import { Home } from './home';
+import { Discovery } from './discovery';
 import { AccountControls, AccountProvider } from './account';
 
-type Mode = 'home' | 'local' | 'multiplayer' | 'decks';
+type Mode = 'home' | 'local' | 'multiplayer' | 'decks' | 'discovery';
 
 const modeLabels: Record<Mode, string> = {
-  home: 'Home', local: 'Local sandbox', decks: 'Deck editor', multiplayer: 'Multiplayer alpha',
+  home: 'Home', local: 'Local sandbox', decks: 'Deck editor', discovery: 'Discover decks', multiplayer: 'Multiplayer alpha',
 };
 
 function NavIcon({ mode }: { mode: Mode }) {
@@ -20,6 +21,7 @@ function NavIcon({ mode }: { mode: Mode }) {
     home: 'M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z',
     local: 'M4 4h16v16H4z M4 12h16 M12 4v16',
     decks: 'M7 3h12v16H7z M4 6v15h12',
+    discovery: 'M3 5h18v14H3z M7 9h10 M7 13h7',
     multiplayer: 'M16 21v-2a4 4 0 0 0-4-4H4a4 4 0 0 0-4 4v2 M8 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M24 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75',
   };
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[mode]} /></svg>;
@@ -77,6 +79,7 @@ function AppBody() {
       <main className="site-content">
         {mode === 'home' ? <Home moduleCount={modulePackages.length} onNavigate={setMode} />
           : mode === 'multiplayer' ? <Multiplayer bindings={bindings} modulePackages={modulePackages} />
+            : mode === 'discovery' ? <Discovery modulePackages={modulePackages} onOpenEditor={() => setMode('decks')} />
             : <Table bindings={bindings} modulePackages={modulePackages} showEditor={mode === 'decks'} onOpenTable={() => setMode('local')} />}
       </main>
     </div>

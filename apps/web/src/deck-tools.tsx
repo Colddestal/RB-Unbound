@@ -109,7 +109,7 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
   const [preview, setPreview] = useState<CardPreview | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingSave = useRef<{ token: string; id: string; deck: DeckDefinition } | null>(null);
+  const pendingSave = useRef<{ token: string; id: string; deck: DeckDefinition; isPrivate: boolean } | null>(null);
   const saveQueue = useRef<Promise<boolean>>(Promise.resolve(true));
   const flushSave = () => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -119,7 +119,7 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
     if (!pending) return saveQueue.current;
     saveQueue.current = saveQueue.current.catch(() => false).then(async () => {
       try {
-        await accountRequest(pending.token, `/decks/${pending.id}`, 'PUT', { deck: pending.deck });
+        await accountRequest(pending.token, `/decks/${pending.id}`, 'PUT', { deck: pending.deck, isPrivate: pending.isPrivate });
         setMessage('Saved to your account.');
         return true;
       } catch {
@@ -155,6 +155,14 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
   if (!structured && !deck.cards.length) warnings.push('Deck needs at least one card.');
   const usable = warnings.length === 0 && isDeckDefinition(deck, module, catalog);
   const current = sectionCards(deck, activeSection);
+  const selectedDeck = library.find(item => item.id === selectedId);
+
+  const queueSave = (item: SavedDeck) => {
+    if (!account) return;
+    pendingSave.current = { token: account.token, id: item.id, deck: item.deck, isPrivate: item.isPrivate !== false };
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => { void flushSave(); }, 450);
+  };
 
   const updateDeck = (next: DeckDefinition) => {
     setPreview(null);
@@ -162,13 +170,20 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
     const updated = library.map(item => item.id === selectedId ? { ...item, deck: next } : item);
     setLibrary(updated);
     if (account) {
-      pendingSave.current = { token: account.token, id: selectedId, deck: next };
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      saveTimer.current = setTimeout(() => { void flushSave(); }, 450);
+      const item = updated.find(entry => entry.id === selectedId);
+      if (item) queueSave(item);
     } else {
       try { window.localStorage.setItem(libraryKey(module), JSON.stringify(updated)); setMessage('Saved in this browser. Sign in to use it on another device.'); }
       catch { setMessage('Changes are available for this session. Export a copy to keep them.'); }
     }
+  };
+
+  const setPrivate = (isPrivate: boolean) => {
+    if (!account || !selectedDeck) return;
+    const updated = library.map(item => item.id === selectedId ? { ...item, isPrivate } : item);
+    setLibrary(updated);
+    queueSave({ ...selectedDeck, isPrivate });
+    setMessage(isPrivate ? 'Saving as private…' : 'Publishing to Discovery…');
   };
 
   const createDeck = async () => {
@@ -226,8 +241,8 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
       const item = account
         ? await accountRequest<SavedDeck>(account.token, '/decks', 'POST', { moduleId: module.id })
         : { id: crypto.randomUUID(), deck: parsed };
-      if (account) await accountRequest(account.token, `/decks/${item.id}`, 'PUT', { deck: parsed });
-      const next = [...library, { id: item.id, deck: parsed }];
+      if (account) await accountRequest(account.token, `/decks/${item.id}`, 'PUT', { deck: parsed, isPrivate: false });
+      const next = [...library, { ...item, deck: parsed }];
       setLibrary(next); setSelectedId(item.id); setDeck(parsed);
       if (!account) window.localStorage.setItem(libraryKey(module), JSON.stringify(next));
       setMessage(`Imported ${parsed.name}. Review the warnings before loading.`);
@@ -259,6 +274,11 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
         <input maxLength={100} value={deck.name} onChange={event => updateDeck({ ...deck, name: event.target.value })} placeholder="Name your deck" />
       </label>
     </div>
+
+    <label className="deck-privacy"><input type="checkbox" checked={selectedDeck?.isPrivate !== false} disabled={!account || !selectedDeck}
+      onChange={event => setPrivate(event.target.checked)} /> Private deck
+      <span>{account ? 'Uncheck to show this deck in Discovery. New account decks are public by default.' : 'Sign in to publish decks. Browser-only decks stay on this device.'}</span>
+    </label>
 
     <nav className="deck-section-tabs" aria-label="Deck sections">
       {sections.map(section => <button key={section} type="button" className={activeSection === section ? 'active' : ''}
