@@ -228,9 +228,10 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
 
   useEffect(() => {
     const originalTitle = document.title;
-    if (room?.status === 'active' && identity?.seat === match?.turn.seat) document.title = '● Your turn · RB Unbound';
+    if (room?.status === 'active' && match?.phase === 'playing' && identity?.seat === match.turn.seat)
+      document.title = '● Your turn · RB Unbound';
     return () => { document.title = originalTitle; };
-  }, [room?.status, identity?.seat, match?.turn.seat]);
+  }, [room?.status, identity?.seat, match?.phase, match?.turn.seat]);
 
   const activePackage = room?.modulePackage ?? builtInModulePackages[0];
   const activeModule = activePackage.module;

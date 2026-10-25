@@ -31,7 +31,7 @@ if [[ -e "$release" ]]; then
   git -C "$source_dir" worktree remove --force "$release"
 fi
 git -C "$source_dir" worktree add --detach "$release" "$target"
-if ! (cd "$release" && npm ci --no-audit --no-fund && npm run check && npm test && npm run build); then
+if ! (cd "$release" && npm ci --no-audit --no-fund && npm run check && npm test && npm run test:match && npm run build); then
   git -C "$source_dir" worktree remove --force "$release"
   echo "Candidate $target failed validation; current release was not changed." >&2
   exit 1

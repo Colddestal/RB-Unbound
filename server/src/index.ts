@@ -2,7 +2,8 @@ import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from 
 import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, relative, resolve, sep } from 'node:path';
-import { accountForToken, handleAccountApi, loadAccounts, playableAccountDeck } from './accounts.js';
+import { isDeepStrictEqual } from 'node:util';
+import { accountForToken, flushAccounts, handleAccountApi, loadAccounts, playableAccountDeck } from './accounts.js';
 import { Server, type Socket } from 'socket.io';
 import {
   addSpectator,
@@ -119,8 +120,12 @@ const EVENT_MAX_BYTES: Record<string, number> = {
   'match:mulligan': 512,
   'match:action': 2048,
 };
+const OBJECT_PAYLOAD_EVENTS = new Set(Object.keys(EVENT_MAX_BYTES).filter(event =>
+  event !== 'room:leave' && event !== 'match:request-state'));
 
 const siteRoot = resolve(process.cwd(), 'apps/web/dist');
+const port = Number(process.env.RB_UNBOUND_PORT ?? 3001);
+if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid RB_UNBOUND_PORT');
 const mimeTypes: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -255,6 +260,8 @@ function registerPackage(value: unknown): ModulePackage | undefined {
   const key = modulePackageKey(value.module);
   const builtIn = builtInModulePackages.find(bundle => modulePackageKey(bundle.module) === key);
   if (builtIn) return builtIn;
+  const existing = modulePackages.get(key);
+  if (existing) return isDeepStrictEqual(existing, value) ? existing : undefined;
   modulePackages.set(key, value);
   return value;
 }
@@ -732,6 +739,12 @@ io.on('connection', socket => {
     const maxBytes = EVENT_MAX_BYTES[eventName] ?? 4096;
     const identity = rateIdentity(socket);
 
+    if (OBJECT_PAYLOAD_EVENTS.has(eventName) && args.length > 0 &&
+      (!args[0] || typeof args[0] !== 'object' || Array.isArray(args[0]))) {
+      recordViolation(socket, 'invalid-payload');
+      return next(new Error('Invalid request.'));
+    }
+
     if (approximatePayloadBytes(args) > maxBytes) {
       recordViolation(socket, 'payload-too-large');
       return next(new Error('Payload too large.'));
@@ -887,6 +900,8 @@ io.on('connection', socket => {
     const session = currentSession(socket);
     const room = session ? rooms.get(session.roomCode) : undefined;
     if (!session || !room) return fail(socket, 'You are not in a room.');
+    if (room.ownerMemberId !== session.memberId || room.status !== 'lobby' || room.settingsLocked)
+      return fail(socket, 'Only the room owner can change unlocked lobby settings.');
 
     const safePatch: Partial<RoomSettings> = {};
     if (typeof payload.roomName === 'string') safePatch.roomName = payload.roomName.trim().slice(0, 60);
@@ -986,6 +1001,7 @@ io.on('connection', socket => {
     const account = accountForSocket(socket);
     if (!session?.seat || !room || !match || match.phase !== 'select-deck') return fail(socket, 'Deck selection is closed.');
     if (!account || typeof payload.deckId !== 'string') return fail(socket, 'Sign in and choose one of your decks.');
+    if (match.selectedDecks.has(session.seat)) return fail(socket, 'Your deck is already locked.');
     const deck = playableAccountDeck(account, payload.deckId);
     if (!deck || deck.moduleId !== room.settings.moduleId || deck.moduleVersion !== room.settings.moduleVersion)
       return fail(socket, 'That deck is incomplete or does not belong to this game.');
@@ -1167,8 +1183,8 @@ io.on('connection', socket => {
 });
 
 async function shutdown(signal: string): Promise<void> {
-  console.log(`${signal}: saving multiplayer state before shutdown...`);
-  await flushSnapshot();
+  console.log(`${signal}: saving multiplayer and account state before shutdown...`);
+  await Promise.all([flushSnapshot(), flushAccounts()]);
   process.exit(0);
 }
 
@@ -1178,6 +1194,6 @@ process.once('SIGTERM', () => { void shutdown('SIGTERM'); });
 await loadAccounts();
 await restoreState();
 
-httpServer.listen(3001, '127.0.0.1', () => {
-  console.log(`RB Unbound site and multiplayer server on http://127.0.0.1:3001 (snapshot: ${snapshotPath()})`);
+httpServer.listen(port, '127.0.0.1', () => {
+  console.log(`RB Unbound site and multiplayer server on http://127.0.0.1:${port} (snapshot: ${snapshotPath()})`);
 });

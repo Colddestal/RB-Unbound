@@ -26,6 +26,7 @@ describe('interactive custom zones', () => {
     table = applyAction(table, { type: 'draw', player: 1 }, allowed, stackable);
     const card = table.cards.find(item => item.zone === 'hand')!;
     const next = applyAction(table, { type: 'to-zone', id: card.id, zone: 'not-real', actor: 1 }, allowed, stackable);
+    expect(next).toBe(table);
     expect(next.cards.find(item => item.id === card.id)?.zone).toBe('hand');
   });
 

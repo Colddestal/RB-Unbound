@@ -2,19 +2,29 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { io } from 'socket.io-client';
 
 const temp = await mkdtemp(join(tmpdir(), 'rb-match-'));
-const base = 'http://127.0.0.1:3001';
-const server = spawn(process.execPath, ['--import', 'tsx', 'server/src/index.ts'], {
-  env: { ...process.env, RB_UNBOUND_ACCOUNT_PATH: join(temp, 'accounts.json'), RB_UNBOUND_STATE_PATH: join(temp, 'rooms.json') },
-  stdio: ['ignore', 'pipe', 'pipe'],
-});
+const reserved = createServer();
+reserved.listen(0, '127.0.0.1');
+await once(reserved, 'listening');
+const testPort = reserved.address().port;
+await new Promise((resolve, reject) => reserved.close(error => error ? reject(error) : resolve()));
+const base = `http://127.0.0.1:${testPort}`;
 let serverOutput = '';
-server.stderr.on('data', chunk => { serverOutput += String(chunk); });
-server.stdout.on('data', chunk => { serverOutput += String(chunk); });
+function startServer() {
+  const child = spawn(process.execPath, ['--import', 'tsx', 'server/src/index.ts'], {
+    env: { ...process.env, RB_UNBOUND_PORT: String(testPort), RB_UNBOUND_ACCOUNT_PATH: join(temp, 'accounts.json'), RB_UNBOUND_STATE_PATH: join(temp, 'rooms.json') },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  child.stderr.on('data', chunk => { serverOutput += String(chunk); });
+  child.stdout.on('data', chunk => { serverOutput += String(chunk); });
+  return child;
+}
+let server = startServer();
 const sockets = [];
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 function next(socket, event, predicate = () => true) {
@@ -48,29 +58,75 @@ async function updateAfter(socket, action, phase, predicate = () => true) {
   action();
   return update;
 }
-
-try {
-  let healthy = false;
+async function waitForServer() {
   for (let i = 0; i < 60; i++) {
     if (server.exitCode !== null) throw new Error(serverOutput);
-    try { healthy = (await fetch(`${base}/healthz`)).ok; } catch { /* waiting for startup */ }
-    if (healthy) break;
+    try { if ((await fetch(`${base}/healthz`)).ok) return; } catch { /* waiting for startup */ }
     await delay(100);
   }
-  if (!healthy) throw new Error(`Server did not start: ${serverOutput}`);
+  throw new Error(`Server did not start: ${serverOutput}`);
+}
+async function stopServer() {
+  if (server.exitCode !== null) return;
+  const stopped = once(server, 'exit');
+  server.kill('SIGTERM');
+  await stopped;
+}
+
+try {
+  await waitForServer();
+
+  const invalidOrigin = await fetch(`${base}/api/account/register`, { method: 'POST', headers: { Origin: '%broken' } });
+  assert.equal(invalidOrigin.status, 403);
+  assert.equal((await fetch(`${base}/healthz`)).status, 200);
 
   const a = await account('seat_one_test');
   const b = await account('seat_two_test');
+  const createdDeck = await fetch(`${base}/api/decks`, { method: 'POST', headers: {
+    Authorization: `Bearer ${a.token}`, 'Content-Type': 'application/json',
+  }, body: JSON.stringify({ moduleId: 'frontier-skirmish' }) });
+  assert.equal(createdDeck.status, 201);
+  const saved = await createdDeck.json();
+  saved.deck.name = 'Account-bound test deck';
+  const updatedDeck = await fetch(`${base}/api/decks/${saved.id}`, { method: 'PUT', headers: {
+    Authorization: `Bearer ${a.token}`, 'Content-Type': 'application/json',
+  }, body: JSON.stringify({ deck: saved.deck }) });
+  assert.equal(updatedDeck.status, 200);
+  a.deckId = saved.id;
   const wrong = await fetch(`${base}/api/decks/${a.deckId}`, { headers: { Authorization: `Bearer ${b.token}` } });
   assert.equal(wrong.status, 404);
   const one = await connect(a.token);
   const two = await connect(b.token);
+  const warning = next(one, 'abuse:warning');
+  one.emit('room:create', null);
+  assert.equal((await warning).reason, 'invalid-payload');
+  assert.equal((await fetch(`${base}/healthz`)).status, 200);
   const created = next(one, 'room:created');
+  const initialRoom = next(one, 'room:update');
+  const firstSession = next(one, 'session:issued');
   one.emit('room:create', { displayName: 'One', format: '1v1', isPublic: true, moduleId: 'frontier-skirmish', moduleVersion: '1.0.0' });
   const { code } = await created;
+  const originalPackage = (await initialRoom).modulePackage;
+  const roomToken = (await firstSession).token;
   const identity = next(two, 'room:identity');
+  const secondSession = next(two, 'session:issued');
   two.emit('room:join-seat', { code, seat: 2, displayName: 'Two' });
   await identity;
+  await secondSession;
+  const custom = structuredClone(originalPackage);
+  custom.module.id = 'audit-custom';
+  for (const card of custom.cards) card.moduleId = 'audit-custom';
+  const changedModule = next(one, 'room:update', value => value.settings.moduleId === 'audit-custom');
+  one.emit('room:settings', { moduleId: 'audit-custom', moduleVersion: custom.module.version, modulePackage: custom });
+  await changedModule;
+  const conflict = structuredClone(custom);
+  conflict.cards[0].name = 'Changed after registration';
+  const rejected = next(one, 'room:error');
+  one.emit('room:settings', { moduleId: 'audit-custom', moduleVersion: custom.module.version, modulePackage: conflict });
+  assert.match((await rejected).message, /Invalid or unsupported module package/);
+  const restoredModule = next(one, 'room:update', value => value.settings.moduleId === 'frontier-skirmish');
+  one.emit('room:settings', { moduleId: 'frontier-skirmish', moduleVersion: '1.0.0' });
+  await restoredModule;
   const readyOne = next(one, 'room:update', value => value.seats[0].ready);
   one.emit('room:ready', { ready: true });
   await readyOne;
@@ -81,6 +137,9 @@ try {
   assert.equal(selecting.table.cards.length, 0);
   const first = await updateAfter(one, () => one.emit('match:select-deck', { deckId: a.deckId }), 'select-deck', value => value.selectedSeats.includes(1));
   assert.deepEqual(first.selectedSeats, [1]);
+  const alreadyLocked = next(one, 'room:error');
+  one.emit('match:select-deck', { deckId: a.deckId });
+  assert.match((await alreadyLocked).message, /already locked/);
   const seatOneBattlefield = next(one, 'match:update', value => value.phase === 'battlefield');
   const otherSelected = await updateAfter(two, () => two.emit('match:select-deck', { deckId: b.deckId }), 'battlefield');
   assert.equal(otherSelected.table.cards.filter(card => card.zone === 'hand' && card.owner === 2).length, 3);
@@ -103,13 +162,21 @@ try {
   const playing = await updateAfter(one, () => one.emit('match:mulligan', { cardIds: [] }), 'playing');
   assert.equal(playing.table.cards.filter(card => card.zone === 'hand' && card.owner === 1).length, 4);
   assert.equal(seatOneOpening.table.cards.filter(card => card.zone === 'hand' && card.owner === 1).length, 4);
-  console.log('Account isolation and ready → decks → Battlefields A/B → draw four → mulligan → play passed.');
+  sockets.forEach(socket => socket.disconnect());
+  await stopServer();
+  serverOutput = '';
+  server = startServer();
+  await waitForServer();
+  const restoredDecks = await fetch(`${base}/api/decks`, { headers: { Authorization: `Bearer ${a.token}` } }).then(response => response.json());
+  assert.equal(restoredDecks.decks.find(item => item.id === a.deckId)?.deck.name, 'Account-bound test deck');
+  const resumedSocket = await connect(a.token);
+  const resumed = next(resumedSocket, 'match:update', value => value.phase === 'playing');
+  resumedSocket.emit('session:resume', { token: roomToken });
+  const restoredMatch = await resumed;
+  assert.equal(restoredMatch.table.cards.find(card => card.zone === 'objective-a')?.id, ownField.id);
+  console.log('Account CRUD, isolation, ready → decks → Battlefields A/B → draw four → mulligan → play, and restart recovery passed.');
 } finally {
   sockets.forEach(socket => socket.disconnect());
-  if (server.exitCode === null) {
-    const stopped = once(server, 'exit');
-    server.kill();
-    await stopped;
-  }
+  await stopServer();
   await rm(temp, { recursive: true, force: true });
 }

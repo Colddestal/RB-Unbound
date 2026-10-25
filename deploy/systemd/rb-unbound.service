@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=%h/rb-unbound/current
 Environment=RB_UNBOUND_STATE_PATH=%h/rb-unbound/state/server-state.json
+Environment=RB_UNBOUND_ACCOUNT_PATH=%h/rb-unbound/state/accounts.json
 ExecStart=%h/rb-unbound/current/deploy/run-server.sh
 Restart=on-failure
 RestartSec=5s

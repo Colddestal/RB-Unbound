@@ -13,4 +13,5 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+      - run: npm run test:match
       - run: npm run build
