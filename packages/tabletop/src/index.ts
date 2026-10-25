@@ -405,3 +405,5 @@ export * from './game-module.js';
 export * from './deck.js';
 
 export * from './module-package.js';
+
+export * from './card-history.js';

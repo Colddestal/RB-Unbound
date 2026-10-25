@@ -411,6 +411,10 @@ Zone transitions carry the exact release coordinates in the same action that cha
 
 Spatial layer selection is presentation-driven input only; Multiplayer sends a server-authoritative `to-zone` action with optional coordinates for drops that change zones, and `move` for drops within a zone. The server validates ownership and allowed zones.
 
+## Card change history
+
+Local and hosted tables keep an uncapped per-player Undo/Redo stack for card movement, zone changes, rotation, flipping and stacking. A completed drag sends one action, so one Undo reverses the whole drag. Undo restores the previous card state; Redo reapplies it. New card actions clear that player's redo stack. Draw and shuffle are not reversible, and invalidated card states are rejected rather than overwriting later changes. Hosted history lives with the match snapshot and survives a host restart. Multiplayer only accepts Undo/Redo from the active seat and broadcasts the authoritative result to everyone.
+
 
 ## Spatial battlefield layer snapping
 

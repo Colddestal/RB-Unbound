@@ -173,6 +173,20 @@ try {
   }), 'playing', value => value.table.cards.find(card => card.id === playedCard.id)?.zone === 'base');
   assert.deepEqual([movedToBase.table.cards.find(card => card.id === playedCard.id).x,
     movedToBase.table.cards.find(card => card.id === playedCard.id).y], [500, 391]);
+  const wrongPlayerUndo = next(two, 'room:error');
+  two.emit('match:undo');
+  assert.match((await wrongPlayerUndo).message, /your turn/);
+  const undoBase = await updateAfter(one, () => one.emit('match:undo'), 'playing', value =>
+    value.table.cards.find(card => card.id === playedCard.id)?.zone === 'field');
+  assert.deepEqual([undoBase.table.cards.find(card => card.id === playedCard.id).x,
+    undoBase.table.cards.find(card => card.id === playedCard.id).y], [631, 299]);
+  const undoPlay = await updateAfter(one, () => one.emit('match:undo'), 'playing', value =>
+    value.table.cards.find(card => card.id === playedCard.id)?.zone === 'hand');
+  assert.equal(undoPlay.canUndo, false);
+  assert.equal(undoPlay.canRedo, true);
+  const redoPlay = await updateAfter(one, () => one.emit('match:redo'), 'playing', value =>
+    value.table.cards.find(card => card.id === playedCard.id)?.zone === 'field');
+  assert.equal(redoPlay.canRedo, true);
   sockets.forEach(socket => socket.disconnect());
   await stopServer();
   serverOutput = '';
@@ -185,9 +199,12 @@ try {
   resumedSocket.emit('session:resume', { token: roomToken });
   const restoredMatch = await resumed;
   assert.equal(restoredMatch.table.cards.find(card => card.zone === 'objective-a')?.id, ownField.id);
-  const restoredCard = restoredMatch.table.cards.find(card => card.id === playedCard.id);
+  assert.equal(restoredMatch.canRedo, true);
+  const redoAfterRestart = await updateAfter(resumedSocket, () => resumedSocket.emit('match:redo'), 'playing', value =>
+    value.table.cards.find(card => card.id === playedCard.id)?.zone === 'base');
+  const restoredCard = redoAfterRestart.table.cards.find(card => card.id === playedCard.id);
   assert.deepEqual([restoredCard.zone, restoredCard.x, restoredCard.y], ['base', 500, 391]);
-  console.log('Account CRUD, isolation, setup, exact card drops, and restart recovery passed.');
+  console.log('Account CRUD, setup, exact drops, multi-step undo/redo, and restart recovery passed.');
 } finally {
   sockets.forEach(socket => socket.disconnect());
   await stopServer();

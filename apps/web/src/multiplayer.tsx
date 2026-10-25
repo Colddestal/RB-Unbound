@@ -80,7 +80,7 @@ type RoomSnapshot = {
 type Identity = { code: string; seat?: PlayerId; spectator: boolean };
 type MatchSnapshot = { seat?: PlayerId; spectator: boolean; revision: number; turn: { seat: PlayerId; number: number };
   phase?: 'select-deck' | 'battlefield' | 'mulligan' | 'playing';
-  selectedSeats?: PlayerId[]; pickedSeats?: PlayerId[]; mulliganSeats?: PlayerId[]; table: TableView };
+  selectedSeats?: PlayerId[]; pickedSeats?: PlayerId[]; mulliganSeats?: PlayerId[]; canUndo?: boolean; canRedo?: boolean; table: TableView };
 
 // The desktop-hosted site serves the UI and Socket.IO from the same origin.
 // Vite still uses the separate local server during development.
@@ -112,6 +112,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
   const [pinned, setPinned] = useState('');
   const [dragPreview, setDragPreview] = useState<{ id: string; label: string; x: number; y: number } | null>(null);
   const [fieldDragId, setFieldDragId] = useState('');
+  const [boardDragPoint, setBoardDragPoint] = useState<{ id: string; x: number; y: number } | null>(null);
   const [cardContext, setCardContext] = useState<CardContextState | null>(null);
   const [confirmEndTurn, setConfirmEndTurn] = useState(false);
   const [availableDecks, setAvailableDecks] = useState<SavedDeck[]>([]);
@@ -339,12 +340,11 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
 
   const moveContextCard = (zone: string) => {
     if (!contextCard || !canActOnContextCard) return;
-    emitAction({ type: 'to-zone', id: contextCard.id, zone });
     const targetZone = activeModule.zones.find(item => item.id === zone);
     const position = targetZone?.kind === 'custom' && targetZone.stackable
       ? canonicalZonePosition(targetZone, contextCard.owner)
       : undefined;
-    if (position) emitAction({ type: 'move', id: contextCard.id, x: position.x, y: position.y });
+    emitAction({ type: 'to-zone', id: contextCard.id, zone, ...position });
   };
 
   const rotateContextCard = () => {
@@ -370,6 +370,14 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.matches('input, textarea, select, [contenteditable="true"]')) return;
+
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && (event.code === 'KeyZ' || event.code === 'KeyY')) {
+        const direction = event.code === 'KeyY' || event.shiftKey ? 'redo' : 'undo';
+        if (connected && isMyTurn && (direction === 'undo' ? match?.canUndo : match?.canRedo))
+          socket?.emit(`match:${direction}`);
+        event.preventDefault();
+        return;
+      }
 
       const action = actionForCode(bindings, event.code);
 
@@ -404,7 +412,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectedCard, selectedCards, identity?.seat, isMyTurn, socket, bindings]);
+  }, [selectedCard, selectedCards, identity?.seat, isMyTurn, connected, match?.canUndo, match?.canRedo, socket, bindings]);
 
   const create = () => {
     setError('');
@@ -438,7 +446,8 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
 
   const renderFieldCard = (card: PublicCard) => {
     const owned = isMyTurn && identity?.seat === card.owner;
-    const point = toViewerPoint({ x: card.x, y: card.y }, perspectiveViewer, room?.settings.format ?? '1v1');
+    const drag = boardDragPoint?.id === card.id ? boardDragPoint : undefined;
+    const point = toViewerPoint({ x: drag?.x ?? card.x, y: drag?.y ?? card.y }, perspectiveViewer, room?.settings.format ?? '1v1');
     const style: CSSProperties = {
       left: `${point.x / 10}%`,
       top: `${point.y / 6}%`,
@@ -475,15 +484,11 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
         const rect = boardRef.current?.getBoundingClientRect();
         if (!rect || !pointInRect({ x: event.clientX, y: event.clientY }, rect)) return;
         const point = dropCursorPoint(event.clientX, event.clientY, rect);
-        emitAction({
-          type: 'move',
-          id: card.id,
-          x: point.x,
-          y: point.y,
-        });
+        setBoardDragPoint({ id: card.id, ...point });
       }}
       onPointerCancel={event => {
         setFieldDragId('');
+        setBoardDragPoint(null);
         if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
       }}
       onPointerUp={event => {
@@ -500,6 +505,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
           else emitAction({ type: 'move', id: card.id, ...point });
         }
         setFieldDragId('');
+        setBoardDragPoint(null);
         event.currentTarget.releasePointerCapture(event.pointerId);
       }}
     >
@@ -858,13 +864,15 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
                       ? toViewerPoint(rawPosition, perspectiveViewer, room.settings.format)
                       : rawPosition);
                 const styleOffset = hasFreePosition || automaticPoint ? 0 : index * 7;
+                const drag = boardDragPoint?.id === card.id ? boardDragPoint : undefined;
+                const visualDrag = drag ? toViewerPoint(drag, perspectiveViewer, room.settings.format) : undefined;
                 return <button
                   key={`${card.id}-${copyIndex}`}
                   aria-label={`${card.label ?? 'Hidden card'}, Player ${card.owner}`}
                   className={`card custom-zone-card ${art ? 'battlefield-on-board' : ''} ${movable ? 'movable-zone-card' : ''} ${zone.role === 'runes' && runeColor(card, definitions) ? `rune-color-${runeColor(card, definitions)}` : ''} ${zone.displayCopies?.length ? 'shared-card-copy' : ''} ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${card.faceUp ? '' : `back back-${cardBack.pattern}`} ${owned ? '' : 'locked'}`}
                   style={{
-                    left: `calc(${position.x / 10}% + ${styleOffset}px)`,
-                    top: `calc(${position.y / 6}% + ${styleOffset}px)`,
+                    left: `calc(${(visualDrag?.x ?? position.x) / 10}% + ${drag ? 0 : styleOffset}px)`,
+                    top: `calc(${(visualDrag?.y ?? position.y) / 6}% + ${drag ? 0 : styleOffset}px)`,
                     transform: `translate(-50%,-50%) rotate(${card.rotation}deg)`,
                     zIndex: 30 + index,
                     ...(art ? { backgroundImage: `linear-gradient(180deg,#07172344 5%,#071723ef 100%),url(${art})` } : {}),
@@ -893,10 +901,11 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
                     const rect = boardRef.current?.getBoundingClientRect();
                     if (!rect || !pointInRect({ x: event.clientX, y: event.clientY }, rect)) return;
                     const point = dropCursorPoint(event.clientX, event.clientY, rect);
-                    emitAction({ type: 'move', id: card.id, x: point.x, y: point.y });
+                    setBoardDragPoint({ id: card.id, ...point });
                   }}
                   onPointerCancel={event => {
                     setFieldDragId('');
+                    setBoardDragPoint(null);
                     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
                   }}
                   onPointerUp={event => {
@@ -913,6 +922,7 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
                       else emitAction({ type: 'move', id: card.id, ...point });
                     }
                     setFieldDragId('');
+                    setBoardDragPoint(null);
                     event.currentTarget.releasePointerCapture(event.pointerId);
                   }}
                 >
@@ -1011,6 +1021,12 @@ export function Multiplayer({ bindings, modulePackages }: { bindings: KeyBinding
         </section>}
 
         </div>
+
+        {!identity?.spectator && <div className="undo-controls multiplayer-undo-controls">
+          <button type="button" disabled={!connected || !isMyTurn || !match.canUndo} onClick={() => socket?.emit('match:undo')}>Undo</button>
+          <button type="button" disabled={!connected || !isMyTurn || !match.canRedo} onClick={() => socket?.emit('match:redo')}>Redo</button>
+          <span>Ctrl+Z / Ctrl+Y · as many steps as this match has</span>
+        </div>}
 
         {!identity?.spectator && room.settings.format === '1v1' && <section className="shortcut-bar compact" aria-label="Keyboard shortcuts">
           <strong>Keyboard</strong>
