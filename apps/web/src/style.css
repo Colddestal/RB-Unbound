@@ -39,9 +39,6 @@ a{color:#9de9dd}
   border:2px solid #456675;border-radius:18px;box-shadow:0 22px 60px #0008,inset 0 0 80px #0003}
 .midline{position:absolute;left:0;right:0;top:50%;border-top:1px dashed #7da0a855;color:#9fc0c3;font-size:10px;letter-spacing:3px;text-align:center;z-index:1}
 .midline span{position:relative;top:-8px;background:#244649;padding:0 10px}
-.zone-label{position:absolute;left:18px;font-size:11px;letter-spacing:2px;color:#d8e6e8a8;z-index:2}
-.zone-label.player-2{top:122px}
-.zone-label.player-1{bottom:122px}
 .deck-zone{position:absolute;width:96px;z-index:10}
 .deck-2{right:20px;top:48px}
 .deck-1{left:20px;bottom:48px}
@@ -242,22 +239,22 @@ button:focus-visible,select:focus-visible,input:focus-visible,.card:focus-visibl
 .card:active,.mini-card:active{cursor:grabbing}
 
 .module-zone-area{position:absolute;transform:translate(-50%,-50%);display:grid;place-content:center;gap:4px;box-sizing:border-box;border:1px solid #8aa6ad66;border-radius:12px;background:#0d1b2799;color:#a9c3c8;text-align:center;pointer-events:none;z-index:1;box-shadow:inset 0 0 28px #0003}
-.module-zone-area strong{font-size:10px;letter-spacing:2px;text-transform:uppercase}
-.module-zone-area span{font-size:9px;color:#78939b}
 .module-zone-field{border:2px solid #9bb5b966;background:#24464a40;box-shadow:inset 0 0 55px #4d888522}
-.module-zone-field strong{font-size:12px;letter-spacing:4px;color:#c9dcdeaa}
 .module-zone-deck,.module-zone-discard{border-style:dashed}
 .module-zone-behavior-slot{z-index:3;border-style:solid;background:#101f2cb8;box-shadow:inset 0 0 20px #0005,0 0 0 1px #9eb7bd22}
-.module-zone-behavior-slot strong{font-size:9px;letter-spacing:1.4px}
 .module-zone-role-combat-area{z-index:1;border:2px solid #86b4b74a;background:linear-gradient(90deg,#2d55552b 0 49.7%,#83b5b52b 50% 50.3%,#2d55552b 50.6% 100%);box-shadow:inset 0 0 70px #21464455}
-.module-zone-role-combat-area strong{position:absolute;left:50%;top:8px;transform:translateX(-50%);font-size:10px;letter-spacing:3px;color:#c9dcde88}
 .module-zone-role-base{background:#1d35467a;border-color:#6f93a36b}
 .module-zone-role-resources{background:#3f3a245f;border-color:#bea96b73}
 .module-zone-role-main-deck,.module-zone-role-discard,.module-zone-role-resource-deck{z-index:2}
 .module-zone-hand{z-index:1;background:#1020324f;border-color:#66869a42;border-style:dashed}
-.module-zone-hand strong{font-size:9px;color:#8ca5b6;letter-spacing:2px}
 .module-zone-role-objective{z-index:4;background:#182c3ad9;border:2px solid #9ebbc47d;box-shadow:inset 0 0 22px #0006,0 8px 25px #0004}
-.module-zone-role-objective strong{font-size:10px;letter-spacing:1.5px;color:#d8e7eb}
+.rune-color-blue{--rune-color:#58adff}
+.rune-color-red{--rune-color:#f66f70}
+.rune-color-green{--rune-color:#6dd795}
+.rune-color-orange{--rune-color:#ffac61}
+.rune-color-yellow{--rune-color:#f7dc6e}
+.rune-color-purple{--rune-color:#bf8cf7}
+.custom-zone-card[class*="rune-color-"]:not(.back){border-color:var(--rune-color);box-shadow:0 0 0 1px var(--rune-color),0 10px 20px #0009}
 
 
 .deck-pile-control{position:absolute;width:96px;height:126px;z-index:15}

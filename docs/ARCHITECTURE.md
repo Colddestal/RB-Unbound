@@ -387,14 +387,15 @@ Module zones may declare `cardLayout: "horizontal"` for untouched cards that sho
 The Full Mat Prototype uses this for the Runes row. Newly drawn Runes:
 - stay on one horizontal line
 - spread evenly across the available Rune-zone width
+- appear grouped by their color while retaining draw order within each color
 - compress spacing as the row fills so all 12 starter Runes remain on the mat
 - remain individually selectable
 - keep automatic positions only until the player manually moves that card
 
-The authoritative table state still stores untouched drawn Runes at their neutral coordinates. Local and Multiplayer derive the same deterministic presentation position from zone geometry, card order and current zone count. Once a Rune is manually dragged, its explicit x/y coordinates override the automatic row layout.
+The authoritative table state still stores untouched drawn Runes at their neutral coordinates. Local and Multiplayer derive the same deterministic presentation position from zone geometry, color, card order and current zone count. Once a Rune is manually dragged, its explicit x/y coordinates override the automatic row layout. Color borders reinforce each group.
 
 
-## Spatial battlefield layer snapping
+## Spatial battlefield placement
 
 Movable battlefield cards now reconcile their logical zone with the visual layer where they are released.
 
@@ -402,13 +403,13 @@ The client performs canonical board-space hit testing against module zone rectan
 - releasing inside the owning player's Base changes the card zone to `base`
 - releasing inside the shared Combat Area changes the card zone to `field`
 - releasing outside a compatible battlefield layer leaves the current logical zone unchanged
-- unrelated groups such as Runes are excluded from battlefield snapping
+- unrelated groups such as Runes are excluded from battlefield layer selection
 
 Hand-to-board dragging uses the same hit test, so dropping directly onto Base no longer requires the right-click Move to Base action.
 
-Zone transitions preserve explicit card coordinates when moving between movable layers such as Base and Combat Area. The visible drop point therefore remains stable when the logical zone changes. A card played from Hand into any `battlefield` group destination receives the same face-down play treatment as a card played to the normal field.
+Zone transitions carry the exact release coordinates in the same action that changes the logical zone. Cards are centered at that position on both Combat Area and Base, with no jump to a zone's predefined location. A card played from Hand into any `battlefield` group destination receives the same face-down play treatment as a card played to the normal field. The board's zone outlines remain visible without printed labels; card inspection and accessible card names remain available.
 
-Spatial snapping is presentation-driven input only; Multiplayer still sends ordinary server-authoritative `to-zone` and `move` actions and the server remains responsible for validating ownership and allowed zones.
+Spatial layer selection is presentation-driven input only; Multiplayer sends a server-authoritative `to-zone` action with optional coordinates for drops that change zones, and `move` for drops within a zone. The server validates ownership and allowed zones.
 
 
 ## Spatial battlefield layer snapping

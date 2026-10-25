@@ -8,7 +8,7 @@ import { CardContextMenu, type CardContextState } from './card-context-menu';
 import { localHandDropRect, pointInRect } from './drag-drop';
 import { toCanonicalPoint, toViewerPoint, toViewerSeat } from './board-perspective';
 import { actionForCode, displayKey, type KeyBindings } from './controls';
-import { automaticZoneCardPoint } from './zone-card-layout';
+import { automaticZoneCardPoint, orderZoneCards, runeColor } from './zone-card-layout';
 import { spatialDropZone } from './spatial-zone-drop';
 import {
   applyAction,
@@ -50,6 +50,7 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
   const [moduleKey, setModuleKey] = useState(modulePackageKey(defaultPackage.module));
   const activePackage = modulePackages.find(bundle => modulePackageKey(bundle.module) === moduleKey) ?? defaultPackage;
   const activeModule = activePackage.module;
+  const cardDefinitions = useMemo(() => new Map(activePackage.cards.map(card => [card.id, card])), [activePackage]);
   const zoneFor = (kind: Card['zone']) => activeModule.zones.find(zone => zone.id === kind || zone.kind === kind);
   const zoneLabel = (kind: Card['zone']) => zoneFor(kind)?.label ?? kind;
   const cardBack = activeModule.cardBacks[0];
@@ -115,9 +116,8 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
   const canonicalCardPoint = (card: Card) => {
     const zone = activeModule.zones.find(item => item.id === card.zone);
     if (zone?.stackable && card.x === 0 && card.y === 0) {
-      const zoneCards = table.cards
-        .filter(item => item.owner === card.owner && item.zone === card.zone)
-        .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+      const zoneCards = orderZoneCards(zone, table.cards
+        .filter(item => item.owner === card.owner && item.zone === card.zone), cardDefinitions);
       const index = Math.max(0, zoneCards.findIndex(item => item.id === card.id));
       return automaticZoneCardPoint(zone, card.owner, index, zoneCards.length) ??
         canonicalZonePosition(zone, card.owner) ??
@@ -357,7 +357,7 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
       const point = toViewerPoint({ x: target?.x ?? card.x, y: target?.y ?? card.y }, viewer, '1v1');
       style.left = `${point.x / 10}%`;
       style.top = `${point.y / 6}%`;
-      style.transform = `translate(${target ? 9 : 0}px, ${target ? 9 : 0}px) rotate(${card.rotation}deg)`;
+      style.transform = `translate(-50%,-50%) translate(${target ? 9 : 0}px, ${target ? 9 : 0}px) rotate(${card.rotation}deg)`;
       style.zIndex = target ? 4 : 3;
     }
 
@@ -434,10 +434,7 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
         if (mode !== 'field') return;
         const rect = boardRef.current?.getBoundingClientRect();
         if (!rect || !pointInRect({ x: event.clientX, y: event.clientY }, rect)) return;
-        const point = toCanonicalPoint({
-          x: ((event.clientX - rect.left - event.currentTarget.offsetWidth / 2) / rect.width) * 1000,
-          y: ((event.clientY - rect.top - event.currentTarget.offsetHeight / 2) / rect.height) * 600,
-        }, viewer, '1v1');
+        const point = dropCursorPoint(event.clientX, event.clientY, rect);
         execute({
           type: 'move',
           id: card.id,
@@ -462,30 +459,20 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
           if (rect && distance > 6 && pointInRect({ x: event.clientX, y: event.clientY }, rect)) {
             const cursorPoint = dropCursorPoint(event.clientX, event.clientY, rect);
             const targetZone = spatialLayerForCard(card, cursorPoint) ?? 'field';
-            execute({ type: 'to-zone', id: card.id, zone: targetZone, actor: viewer });
+            execute({ type: 'to-zone', id: card.id, zone: targetZone, actor: viewer, ...cursorPoint });
             addLocalHistory(`Player ${viewer} played a card to ${zoneLabel(targetZone)} face-down.`);
-            const point = toCanonicalPoint({
-              x: ((event.clientX - rect.left - 43) / rect.width) * 1000,
-              y: ((event.clientY - rect.top - 58) / rect.height) * 600,
-            }, viewer, '1v1');
-            execute({
-              type: 'move',
-              id: card.id,
-              actor: viewer,
-              x: point.x,
-              y: point.y,
-            });
           }
         } else if (mode === 'field' && rect && pointInRect({ x: event.clientX, y: event.clientY }, localHandDropRect(rect))) {
           execute({ type: 'to-zone', id: card.id, zone: 'hand', actor: viewer });
           addLocalHistory(`Player ${viewer} returned a card to their hand.`);
         } else if (mode === 'field' && rect && pointInRect({ x: event.clientX, y: event.clientY }, rect)) {
-          const targetZone = spatialLayerForCard(card, dropCursorPoint(event.clientX, event.clientY, rect)) ??
+          const point = dropCursorPoint(event.clientX, event.clientY, rect);
+          const targetZone = spatialLayerForCard(card, point) ??
             (zoneGroupFor(card.zone) === 'battlefield' && card.zone !== 'field' ? 'field' : undefined);
           if (targetZone && targetZone !== card.zone) {
-            execute({ type: 'to-zone', id: card.id, zone: targetZone, actor: viewer });
+            execute({ type: 'to-zone', id: card.id, zone: targetZone, actor: viewer, ...point });
             addLocalHistory(`Player ${viewer} moved a card into ${zoneLabel(targetZone)}.`);
-          }
+          } else execute({ type: 'move', id: card.id, actor: viewer, ...point });
         }
 
         handDragRef.current = null;
@@ -496,7 +483,7 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
     >
       <span className="card-symbol">{faceVisible ? '✦' : '◆'}</span>
       <span>{faceVisible ? card.label : 'Hidden card'}</span>
-      <small>P{card.owner} · {zoneLabel(card.zone)}</small>
+      {mode !== 'field' && <small>P{card.owner} · {zoneLabel(card.zone)}</small>}
     </button>;
   };
 
@@ -524,7 +511,6 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
     const active = viewer === player;
 
     return <>
-      <div className={`zone-label player-${player}`}>PLAYER {player} {active ? '· ACTIVE VIEW' : ''}</div>
       <DeckPile
         label={zoneLabel('deck')}
         count={deck.length}
@@ -574,14 +560,13 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
           height: `${zoneFor('discard')!.size!.height / 6}%`,
         } : {}),
         transform: 'translate(-50%,-50%)',
-      }}><span>{zoneLabel('discard').toUpperCase()} · {discard.length}</span></div>
+      }} aria-label={`${zoneLabel('discard')} · ${discard.length} cards`} />
       {discard.slice(-6).map((card, index) => renderCard(card, index, discard, 'discard'))}
       {hand.map((card, index) => renderCard(card, index, hand, 'hand'))}
       {field.map((card, index) => renderCard(card, index, field, 'field'))}
       {activeModule.zones.filter(zone => zone.kind === 'custom' && zoneBehavior(zone) !== 'pile').flatMap(zone => {
-        const cards = table.cards
-          .filter(card => card.owner === player && card.zone === zone.id)
-          .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+        const cards = orderZoneCards(zone, table.cards
+          .filter(card => card.owner === player && card.zone === zone.id), cardDefinitions);
         return cards.flatMap((card, index) => {
           const rawPositions = !zone.ownerScoped && zone.displayCopies?.length
             ? zone.displayCopies
@@ -603,7 +588,7 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
             const movable = Boolean(zone.stackable);
             return <button
               key={`${card.id}-${copyIndex}`}
-              className={`card custom-zone-card ${movable ? 'movable-zone-card' : ''} ${zone.displayCopies?.length ? 'shared-card-copy' : ''} ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${card.faceUp ? '' : `back back-${cardBack.pattern}`}`}
+              className={`card custom-zone-card ${movable ? 'movable-zone-card' : ''} ${runeColor(card, cardDefinitions) && zone.role === 'runes' ? `rune-color-${runeColor(card, cardDefinitions)}` : ''} ${zone.displayCopies?.length ? 'shared-card-copy' : ''} ${selected === card.id || multiSelected.includes(card.id) ? 'selected' : ''} ${card.faceUp ? '' : `back back-${cardBack.pattern}`}`}
               style={{
                 left: `calc(${position.x / 10}% + ${styleOffset}px)`,
                 top: `calc(${position.y / 6}% + ${styleOffset}px)`,
@@ -633,10 +618,7 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
                 if (!owned || !movable || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
                 const rect = boardRef.current?.getBoundingClientRect();
                 if (!rect || !pointInRect({ x: event.clientX, y: event.clientY }, rect)) return;
-                const point = toCanonicalPoint({
-                  x: ((event.clientX - rect.left - event.currentTarget.offsetWidth / 2) / rect.width) * 1000,
-                  y: ((event.clientY - rect.top - event.currentTarget.offsetHeight / 2) / rect.height) * 600,
-                }, viewer, '1v1');
+                const point = dropCursorPoint(event.clientX, event.clientY, rect);
                 execute({ type: 'move', id: card.id, actor: viewer, x: point.x, y: point.y });
               }}
               onPointerCancel={event => {
@@ -650,11 +632,12 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
                   execute({ type: 'to-zone', id: card.id, zone: 'hand', actor: viewer });
                   addLocalHistory(`Player ${viewer} returned a card to their hand.`);
                 } else if (rect && pointInRect({ x: event.clientX, y: event.clientY }, rect)) {
-                  const targetZone = spatialLayerForCard(card, dropCursorPoint(event.clientX, event.clientY, rect));
+                  const point = dropCursorPoint(event.clientX, event.clientY, rect);
+                  const targetZone = spatialLayerForCard(card, point);
                   if (targetZone && targetZone !== card.zone) {
-                    execute({ type: 'to-zone', id: card.id, zone: targetZone, actor: viewer });
+                    execute({ type: 'to-zone', id: card.id, zone: targetZone, actor: viewer, ...point });
                     addLocalHistory(`Player ${viewer} moved a card into ${zoneLabel(targetZone)}.`);
-                  }
+                  } else execute({ type: 'move', id: card.id, actor: viewer, ...point });
                 }
                 setFieldDragId('');
                 event.currentTarget.releasePointerCapture(event.pointerId);
@@ -662,7 +645,6 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
             >
               <span className="card-symbol">{card.faceUp ? '✦' : '◆'}</span>
               <span>{card.faceUp ? card.label : 'Hidden card'}</span>
-              <small>{zone.group === 'battlefield' ? `Battlefield · ${zone.label}` : zone.label}</small>
             </button>;
           });
         });
@@ -723,15 +705,12 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
           const right = Math.max(selectionBox.startX, selectionBox.endX);
           const top = Math.min(selectionBox.startY, selectionBox.endY);
           const bottom = Math.max(selectionBox.startY, selectionBox.endY);
-          const renderedCard = event.currentTarget.querySelector<HTMLElement>('.card');
-          const cardHalfWidth = (renderedCard?.offsetWidth ?? 64) / 2;
-          const cardHalfHeight = (renderedCard?.offsetHeight ?? 88) / 2;
           const ids = table.cards
             .filter(card => card.owner === viewer && movableZoneSet.has(card.zone))
             .filter(card => {
               const point = toViewerPoint(canonicalCardPoint(card), viewer, '1v1');
-              const cx = (point.x / 1000) * rect.width + cardHalfWidth;
-              const cy = (point.y / 600) * rect.height + cardHalfHeight;
+              const cx = (point.x / 1000) * rect.width;
+              const cy = (point.y / 600) * rect.height;
               return cx >= left && cx <= right && cy >= top && cy <= bottom;
             })
             .map(card => card.id);
@@ -748,9 +727,6 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
           return players.flatMap(player => {
             const position = zoneAreaPosition(zone, player);
             if (!position || !zone.size) return [];
-            const count = player
-              ? table.cards.filter(card => card.owner === player && card.zone === zone.id).length
-              : table.cards.filter(card => card.zone === zone.id).length;
             return [<div
               key={`${zone.id}-${player ?? 'shared'}`}
               className={`module-zone-area module-zone-${zone.kind} module-zone-behavior-${zone.behavior ?? 'legacy'} module-zone-role-${zone.role ?? 'none'} ${draggedGroup === 'battlefield' && zone.group === 'battlefield' ? 'spatial-drop-target' : ''}`}
@@ -760,10 +736,8 @@ export function Table({ bindings, modulePackages, showEditor = false, onOpenTabl
                 width: `${zone.size.width / 10}%`,
                 height: `${zone.size.height / 6}%`,
               }}
-            >
-              <strong>{zone.label}</strong>
-              {zone.kind === 'custom' && <span>{count ? `${count} card${count === 1 ? '' : 's'}` : ''}</span>}
-            </div>];
+              aria-hidden="true"
+            />];
           });
         })}
         {fieldDragId && <div className="local-hand-drop-zone active">Drop here to return to hand</div>}

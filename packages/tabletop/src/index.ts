@@ -30,7 +30,7 @@ export type TableAction =
   | { type: 'rotate'; id: string; actor: PlayerId }
   | { type: 'flip'; id: string; actor: PlayerId }
   | { type: 'draw'; player: PlayerId; fromZone?: CardZone; toZone?: CardZone; faceUp?: boolean }
-  | { type: 'to-zone'; id: string; zone: CardZone; actor: PlayerId }
+  | { type: 'to-zone'; id: string; zone: CardZone; actor: PlayerId; x?: number; y?: number }
   | { type: 'shuffle'; player: PlayerId; zone?: CardZone; orderedIds: string[] }
   | { type: 'stack'; id: string; targetId: string; actor: PlayerId }
   | { type: 'unstack'; id: string; actor: PlayerId }
@@ -41,7 +41,7 @@ export type ClientTableAction =
   | { type: 'rotate'; id: string }
   | { type: 'flip'; id: string }
   | { type: 'draw'; fromZone?: CardZone }
-  | { type: 'to-zone'; id: string; zone: CardZone }
+  | { type: 'to-zone'; id: string; zone: CardZone; x?: number; y?: number }
   | { type: 'shuffle'; zone?: CardZone }
   | { type: 'stack'; id: string; targetId: string }
   | { type: 'unstack'; id: string };
@@ -264,8 +264,8 @@ export function applyAction(
             ? true
             : (enteringBattlefieldFromHand ? false : current.faceUp),
         stackOn: undefined,
-        x: enteringField ? defaults[current.owner].x : current.x,
-        y: enteringField ? defaults[current.owner].y : current.y,
+        x: action.x === undefined ? (enteringField ? defaults[current.owner].x : current.x) : Math.max(0, Math.min(1000, action.x)),
+        y: action.y === undefined ? (enteringField ? defaults[current.owner].y : current.y) : Math.max(0, Math.min(600, action.y)),
       };
     }
     return current;
@@ -333,7 +333,10 @@ export function isClientTableAction(value: unknown): value is ClientTableAction 
   if (typeof action.id !== 'string' || action.id.length > 100) return false;
   if (action.type === 'rotate' || action.type === 'flip' || action.type === 'unstack') return true;
   if (action.type === 'move') return typeof action.x === 'number' && Number.isFinite(action.x) && typeof action.y === 'number' && Number.isFinite(action.y);
-  if (action.type === 'to-zone') return typeof action.zone === 'string' && ZONE_ID_PATTERN.test(action.zone);
+  if (action.type === 'to-zone') return typeof action.zone === 'string' && ZONE_ID_PATTERN.test(action.zone) &&
+    ((action.x === undefined && action.y === undefined) ||
+      (typeof action.x === 'number' && Number.isFinite(action.x) &&
+        typeof action.y === 'number' && Number.isFinite(action.y)));
   return action.type === 'stack' && typeof action.targetId === 'string' && action.targetId.length <= 100;
 }
 

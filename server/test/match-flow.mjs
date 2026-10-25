@@ -162,6 +162,17 @@ try {
   const playing = await updateAfter(one, () => one.emit('match:mulligan', { cardIds: [] }), 'playing');
   assert.equal(playing.table.cards.filter(card => card.zone === 'hand' && card.owner === 1).length, 4);
   assert.equal(seatOneOpening.table.cards.filter(card => card.zone === 'hand' && card.owner === 1).length, 4);
+  const playedCard = playing.table.cards.find(card => card.zone === 'hand' && card.owner === 1);
+  const dropped = await updateAfter(one, () => one.emit('match:action', {
+    sequence: 1, action: { type: 'to-zone', id: playedCard.id, zone: 'field', x: 631, y: 299 },
+  }), 'playing', value => value.table.cards.find(card => card.id === playedCard.id)?.zone === 'field');
+  assert.deepEqual([dropped.table.cards.find(card => card.id === playedCard.id).x,
+    dropped.table.cards.find(card => card.id === playedCard.id).y], [631, 299]);
+  const movedToBase = await updateAfter(one, () => one.emit('match:action', {
+    sequence: 2, action: { type: 'to-zone', id: playedCard.id, zone: 'base', x: 500, y: 391 },
+  }), 'playing', value => value.table.cards.find(card => card.id === playedCard.id)?.zone === 'base');
+  assert.deepEqual([movedToBase.table.cards.find(card => card.id === playedCard.id).x,
+    movedToBase.table.cards.find(card => card.id === playedCard.id).y], [500, 391]);
   sockets.forEach(socket => socket.disconnect());
   await stopServer();
   serverOutput = '';
@@ -174,7 +185,9 @@ try {
   resumedSocket.emit('session:resume', { token: roomToken });
   const restoredMatch = await resumed;
   assert.equal(restoredMatch.table.cards.find(card => card.zone === 'objective-a')?.id, ownField.id);
-  console.log('Account CRUD, isolation, ready → decks → Battlefields A/B → draw four → mulligan → play, and restart recovery passed.');
+  const restoredCard = restoredMatch.table.cards.find(card => card.id === playedCard.id);
+  assert.deepEqual([restoredCard.zone, restoredCard.x, restoredCard.y], ['base', 500, 391]);
+  console.log('Account CRUD, isolation, setup, exact card drops, and restart recovery passed.');
 } finally {
   sockets.forEach(socket => socket.disconnect());
   await stopServer();

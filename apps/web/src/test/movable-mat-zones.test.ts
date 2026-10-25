@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyAction,
   frontierSkirmishModule,
+  isClientTableAction,
   type TableState,
 } from '@rb-unbound/tabletop';
 
@@ -79,12 +80,29 @@ describe('movable mat zones', () => {
       id: 'hand-card',
       zone: 'base',
       actor: 1,
+      x: 622,
+      y: 393,
     }, allowedZones, stackableZones, zoneGroups);
 
     expect(result.cards.find(card => card.id === 'hand-card')).toMatchObject({
       zone: 'base',
       faceUp: false,
+      x: 622,
+      y: 393,
     });
+  });
+
+  it('places a hand card at its exact release point in one action', () => {
+    const withHandCard: TableState = {
+      ...state(),
+      cards: [...state().cards, { id: 'hand-card', label: 'Hand Card', owner: 1, zone: 'hand', order: 0, x: 0, y: 0, rotation: 0, faceUp: true }],
+    };
+    const result = applyAction(withHandCard, {
+      type: 'to-zone', id: 'hand-card', zone: 'field', actor: 1, x: 631, y: 299,
+    }, allowedZones, stackableZones, zoneGroups);
+    expect(result.cards.find(card => card.id === 'hand-card')).toMatchObject({ zone: 'field', x: 631, y: 299, faceUp: false });
+    expect(isClientTableAction({ type: 'to-zone', id: 'hand-card', zone: 'field', x: 631, y: 299 })).toBe(true);
+    expect(isClientTableAction({ type: 'to-zone', id: 'hand-card', zone: 'field', x: 631 })).toBe(false);
   });
 
   it('treats Base and field as one battlefield interaction group', () => {
