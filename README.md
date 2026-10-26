@@ -31,6 +31,8 @@ Open the Vite URL shown in the terminal. The Home dashboard links to the local t
 
 The built-in catalog still contains original placeholder cards. Official Riftbound cards and art require Riot-approved app-specific API access; the generic editor is ready for an authorized catalog but does not ship one.
 
+On desktop, the deck editor opens a visual card grid next to a persistent deck panel. Use the section tabs, search, color filters, and name/color sorting to find cards; the Grid/List control switches between gallery and compact rows. The gallery's minus and plus buttons change quantities, and hovering or focusing a card opens its full text preview. Import, export, reset, delete, validation, and local test controls stay with the deck panel.
+
 To run the multiplayer development server in another terminal:
 
 ```bash
