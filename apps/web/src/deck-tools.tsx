@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { battlefieldArt } from './battlefield-art';
 import { accountRequest, useAccount, type SavedDeck } from './account';
 import {
-  DECK_SECTIONS, cardSection, deckWarnings, isDeckDefinition, searchCardCatalog,
+  AFFINITIES, DECK_SECTIONS, cardSection, deckWarnings, isDeckDefinition, searchCardCatalog,
   sectionCards, sectionLabel, starterDeckForModule,
   type CardDefinition, type DeckDefinition, type DeckSection, type GameModule,
 } from '@rb-unbound/tabletop';
@@ -101,6 +101,9 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
   const structured = module.id === 'frontier-skirmish';
   const sections = structured ? DECK_SECTIONS : (['deck'] as const);
   const [query, setQuery] = useState('');
+  const [cardView, setCardView] = useState<'grid' | 'list'>('grid');
+  const [colorFilter, setColorFilter] = useState('all');
+  const [sortBy, setSortBy] = useState<'name' | 'color'>('name');
   const [activeSection, setActiveSection] = useState<DeckSection>('deck');
   const [library, setLibrary] = useState<SavedDeck[]>(() => localLibrary(module, catalog));
   const [selectedId, setSelectedId] = useState(() => library[0].id);
@@ -148,8 +151,12 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
     .filter(card => !structured || cardSection(card) === (activeSection === 'sideDeck' ? 'deck' : activeSection))
     .filter(card => activeSection === 'legend' || allowedColors.size !== 2 || !structured ||
       (Array.isArray(card.metadata.affinities) && card.metadata.affinities.every(color => allowedColors.has(color))))
-    .filter(card => activeSection !== 'champion' || !legend || card.metadata.identity === legend.metadata.identity),
-  [catalog, module, query, structured, activeSection, legend]);
+    .filter(card => activeSection !== 'champion' || !legend || card.metadata.identity === legend.metadata.identity)
+    .filter(card => colorFilter === 'all' || (Array.isArray(card.metadata.affinities) && card.metadata.affinities.includes(colorFilter)))
+    .sort((a, b) => sortBy === 'color'
+      ? (Array.isArray(a.metadata.affinities) ? a.metadata.affinities[0] : '').localeCompare(Array.isArray(b.metadata.affinities) ? b.metadata.affinities[0] : '') || a.name.localeCompare(b.name)
+      : a.name.localeCompare(b.name)),
+  [catalog, module, query, structured, activeSection, legend, colorFilter, sortBy]);
   const warnings = structured ? deckWarnings(deck, catalog) : [];
   if (!deck.name.trim()) warnings.unshift('Give this deck a name.');
   if (!structured && !deck.cards.length) warnings.push('Deck needs at least one card.');
@@ -222,6 +229,11 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
     if (activeSection === 'battlefields' && current.includes(id)) { setMessage('Choose a different Battlefield.'); return; }
     setSection(activeSection, activeSection === 'legend' || activeSection === 'champion' ? [id] : [...current, id]);
   };
+  const removeCard = (id: string) => {
+    const index = current.lastIndexOf(id);
+    if (index >= 0) setSection(activeSection, current.filter((_, position) => position !== index));
+  };
+  const showCardPreview = (card: CardDefinition, x: number, y: number) => setPreview({ card, ...previewPosition(x, y) });
   const download = () => {
     const blob = new Blob([JSON.stringify(deck, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -280,22 +292,50 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
       <span>{account ? 'Uncheck to show this deck in Discovery. New account decks are public by default.' : 'Sign in to publish decks. Browser-only decks stay on this device.'}</span>
     </label>
 
-    <nav className="deck-section-tabs" aria-label="Deck sections">
-      {sections.map(section => <button key={section} type="button" className={activeSection === section ? 'active' : ''}
-        aria-current={activeSection === section ? 'page' : undefined} onClick={() => { setActiveSection(section); setQuery(''); setPreview(null); }}>
-        <strong>{sectionLabel(section)}</strong><span>{sectionCards(deck, section).length}{structured ? ` / ${sectionLimit(section)}` : ''}</span>
-      </button>)}
-    </nav>
-
     <div className="deck-editor-grid">
       <div className="deck-catalog-pane">
+        <nav className="deck-section-tabs" aria-label="Deck sections">
+          {sections.map(section => <button key={section} type="button" className={activeSection === section ? 'active' : ''}
+            aria-current={activeSection === section ? 'page' : undefined} onClick={() => { setActiveSection(section); setQuery(''); setColorFilter('all'); setPreview(null); }}>
+            <strong>{sectionLabel(section)}</strong><span>{sectionCards(deck, section).length}{structured ? ` / ${sectionLimit(section)}` : ''}</span>
+          </button>)}
+        </nav>
         <div className="deck-pane-title"><h3>{sectionLabel(activeSection)} card pool</h3><span>{results.length} available</span></div>
-        <label>Search {sectionLabel(activeSection).toLowerCase()} cards
-          <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search names, colors, types…" />
-        </label>
+        <div className="deck-browser-toolbar">
+          <label>Search {sectionLabel(activeSection).toLowerCase()} cards
+            <input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search names, colors, types…" />
+          </label>
+          <label>Sort cards<select aria-label="Sort cards" value={sortBy} onChange={event => setSortBy(event.target.value as 'name' | 'color')}>
+            <option value="name">Name</option><option value="color">Color</option>
+          </select></label>
+          <div className="deck-view-toggle" role="group" aria-label="Card display">
+            <button type="button" className={cardView === 'grid' ? 'active' : ''} aria-pressed={cardView === 'grid'} onClick={() => setCardView('grid')}>Grid</button>
+            <button type="button" className={cardView === 'list' ? 'active' : ''} aria-pressed={cardView === 'list'} onClick={() => setCardView('list')}>List</button>
+          </div>
+        </div>
+        <div className="deck-color-filters" role="group" aria-label="Filter cards by color">
+          <button type="button" className={colorFilter === 'all' ? 'active' : ''} aria-pressed={colorFilter === 'all'} onClick={() => setColorFilter('all')}>All colors</button>
+          {AFFINITIES.filter(color => catalog.some(card => cardSection(card) === (activeSection === 'sideDeck' ? 'deck' : activeSection) && Array.isArray(card.metadata.affinities) && card.metadata.affinities.includes(color)))
+            .map(color => <button type="button" key={color} className={colorFilter === color ? 'active' : ''} aria-pressed={colorFilter === color}
+              onClick={() => setColorFilter(color)}><span className={`affinity affinity-${color}`} />{color}</button>)}
+        </div>
         {structured && legend && activeSection !== 'legend' && <p className="muted">{legend.name} allows {Array.from(allowedColors).join(' + ')}.</p>}
-        <div className="catalog-results" aria-label="Available cards">
-          {results.map(card => <div className="catalog-row" key={card.id}>
+        <div className={`catalog-results ${cardView === 'grid' ? 'catalog-grid' : 'catalog-list'}`} aria-label="Available cards">
+          {results.map(card => cardView === 'grid' ? <div className="catalog-tile" key={card.id} tabIndex={0} aria-label={`Preview ${card.name}`}
+            onMouseEnter={event => showCardPreview(card, event.clientX, event.clientY)}
+            onMouseMove={event => showCardPreview(card, event.clientX, event.clientY)}
+            onMouseLeave={() => setPreview(null)}
+            onFocus={event => { const rect = event.currentTarget.getBoundingClientRect(); showCardPreview(card, rect.right, rect.top + rect.height / 2); }}
+            onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setPreview(null); }}
+            onKeyDown={event => { if (event.key === 'Escape') setPreview(null); }}>
+            <SampleCardFace card={card} size="catalog" />
+            <div className="catalog-tile-title"><strong>{card.name}</strong><span>{Array.isArray(card.metadata.affinities) ? card.metadata.affinities.join(' + ') : 'Original sample'}</span></div>
+            <div className="catalog-tile-actions">
+              <button type="button" disabled={!current.includes(card.id)} onClick={() => removeCard(card.id)} aria-label={`Remove ${card.name} from ${sectionLabel(activeSection)}`}>−</button>
+              <strong aria-label={`${current.filter(id => id === card.id).length} in ${sectionLabel(activeSection)}`}>{current.filter(id => id === card.id).length}</strong>
+              <button type="button" disabled={current.length >= MAX_CARDS || (activeSection === 'battlefields' && current.includes(card.id))} onClick={() => addCard(card.id)} aria-label={`Add ${card.name}`}>+</button>
+            </div>
+          </div> : <div className="catalog-row" key={card.id}>
             <SampleCardFace card={card} size="catalog" />
             <div className="sample-card-meta"><strong>{card.name}</strong><span>{Array.isArray(card.metadata.affinities) ? card.metadata.affinities.join(' · ') : 'Original sample'}</span>
               <small>{String(card.metadata.rules ?? card.metadata.class ?? '')}</small></div>
@@ -307,6 +347,13 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
 
       <aside className="deck-list-pane" aria-label="Current deck">
         <div className="deck-pane-title"><h3>Deck list</h3><span>{deck.cards.length + sectionCards(deck, 'champion').length} main cards</span></div>
+        <div className="deck-panel-actions">
+          <button type="button" onClick={() => fileRef.current?.click()}>Import deck</button>
+          <button type="button" onClick={download}>Export deck</button>
+          <button type="button" onClick={() => { updateDeck(starterDeckForModule(module, catalog)); setMessage('Reset to the original sample starter.'); }}>Reset to starter</button>
+          <button type="button" onClick={() => { void deleteDeck(); }}>Delete deck</button>
+        </div>
+        <div className="deck-list-scroll">
         {sections.map(section => {
           const sectionCounts = new Map<string, number>();
           for (const id of sectionCards(deck, section)) sectionCounts.set(id, (sectionCounts.get(id) ?? 0) + 1);
@@ -349,20 +396,16 @@ export function DeckTools({ module, onLoadDeck, catalog }: {
             {!sectionCounts.size && <p className="muted">No cards yet.</p>}
           </div>;
         })}
+        </div>
         <div className={`deck-validation ${usable ? 'ready' : ''}`} aria-live="polite">
           <strong>{usable ? 'Deck is ready to load' : 'Deck cannot be loaded yet'}</strong>
           {!!warnings.length && <ul>{warnings.map((warning, index) => <li key={`${index}-${warning}`}>{warning}</li>)}</ul>}
         </div>
+        <div className="deck-test-actions">
+          <button className="primary" disabled={!usable} onClick={() => { void flushSave().then(saved => { if (saved) { onLoadDeck(deck, 1); setMessage(`Loaded ${deck.name} to Seat 1 for local testing.`); } }); }}>Test as Seat 1</button>
+          <button className="primary" disabled={!usable} onClick={() => { void flushSave().then(saved => { if (saved) { onLoadDeck(deck, 2); setMessage(`Loaded ${deck.name} to Seat 2 for local testing.`); } }); }}>Test as Seat 2</button>
+        </div>
       </aside>
-    </div>
-
-    <div className="button-row deck-actions">
-      <button onClick={() => { updateDeck(starterDeckForModule(module, catalog)); setMessage('Reset to the original sample starter.'); }}>Reset to starter</button>
-      <button onClick={() => { void deleteDeck(); }}>Delete deck</button>
-      <button onClick={() => fileRef.current?.click()}>Import deck</button>
-      <button onClick={download}>Export deck</button>
-      <button className="primary" disabled={!usable} onClick={() => { void flushSave().then(saved => { if (saved) { onLoadDeck(deck, 1); setMessage(`Loaded ${deck.name} to Seat 1 for local testing.`); } }); }}>Test as Seat 1</button>
-      <button className="primary" disabled={!usable} onClick={() => { void flushSave().then(saved => { if (saved) { onLoadDeck(deck, 2); setMessage(`Loaded ${deck.name} to Seat 2 for local testing.`); } }); }}>Test as Seat 2</button>
     </div>
     <input ref={fileRef} hidden type="file" accept=".json,application/json" onChange={event => {
       void importDeck(event.target.files?.[0]); event.target.value = '';

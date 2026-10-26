@@ -62,7 +62,7 @@ describe('DeckTools', () => {
 
   it('shows colored list thumbnails and a readable card beside the pointer on hover or focus', () => {
     openEditor();
-    const row = screen.getByLabelText('Preview Tide Scout');
+    const row = within(screen.getByLabelText('Current deck')).getByLabelText('Preview Tide Scout');
     expect(within(row).getByLabelText('blue')).toBeInTheDocument();
     fireEvent.mouseEnter(row, { clientX: 1000, clientY: 400 });
     const tooltip = screen.getByRole('tooltip');
@@ -75,6 +75,22 @@ describe('DeckTools', () => {
     expect(screen.getByRole('tooltip')).toHaveTextContent('Tide Scout');
     fireEvent.keyDown(row, { key: 'Escape' });
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
+  });
+
+  it('uses a visual card grid with working counts, filters, and a list option', () => {
+    openEditor();
+    expect(screen.getByRole('button', { name: 'Grid' })).toHaveAttribute('aria-pressed', 'true');
+    const pool = screen.getByLabelText('Available cards');
+    const tile = within(pool).getByLabelText('Preview Tide Scout');
+    expect(within(tile).getByLabelText('3 in Deck')).toBeInTheDocument();
+    fireEvent.click(within(tile).getByRole('button', { name: 'Remove Tide Scout from Deck' }));
+    expect(within(tile).getByLabelText('2 in Deck')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'green' }));
+    expect(within(pool).queryByLabelText('Preview Tide Scout')).not.toBeInTheDocument();
+    expect(within(pool).getByLabelText('Preview Moss Guardian')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'List' }));
+    expect(screen.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(pool).getByRole('button', { name: 'Add Moss Guardian' })).toBeInTheDocument();
   });
 
   it('uses a separate app view and loads the chosen rune, legend, and champion piles', async () => {

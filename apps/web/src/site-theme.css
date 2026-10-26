@@ -126,6 +126,12 @@ body{min-width:320px;background:linear-gradient(145deg,#61738f,#8798b2 64%,#6478
 .site-shell .discovery-section{border-color:#e2e8f2}.site-shell .discovery-section>div{color:#42516d}
 .site-shell .deck-section-tabs{border-color:#dce4f1}.site-shell .deck-section-tabs button{background:#edf1fa;border-color:#dce4f1;color:#52627f}.site-shell .deck-section-tabs button.active{background:#4945d8;border-color:#4945d8;color:#fff}.site-shell .deck-section-tabs button span{color:inherit;opacity:.77}
 .site-shell .deck-list-pane{background:#f1f4fb;border-color:#d8e2f0}.site-shell .deck-list-heading{background:#e3e9f7;color:#35446a}.site-shell .deck-editor-row{background:#fff;border-color:#e0e6f1;color:#2d3c55}.site-shell .deck-editor-row:hover,.site-shell .deck-editor-row:focus-visible{background:#f3f5ff;border-color:#9b9eec}
+.site-shell .catalog-tile{background:#fff;border-color:#dce4f1}.site-shell .catalog-tile:hover,.site-shell .catalog-tile:focus-within{border-color:#8988e7}
+.site-shell .catalog-tile-title{color:#293750}.site-shell .catalog-tile-title span{color:#72819a}
+.site-shell .deck-view-toggle,.site-shell .deck-view-toggle button,.site-shell .deck-color-filters button,.site-shell .catalog-tile-actions button,.site-shell .deck-panel-actions button{background:#eef2fc;color:#3b4a70;border-color:#ced9eb}
+.site-shell .deck-view-toggle button.active,.site-shell .deck-color-filters button.active{background:#4945d8;color:#fff;border-color:#4945d8}
+.site-shell .deck-browser-toolbar select{background:#fff;color:#263450;border-color:#cbd6e7}
+.site-shell .deck-list-pane .deck-test-actions button{color:#fff}
 .site-shell .sample-card-meta span,.site-shell .sample-card-meta small,.site-shell .deck-pane-title span{color:#6e7e98}
 .site-shell .deck-validation{background:#fff2e7;border-color:#e8bd99;color:#8a5636}.site-shell .deck-validation.ready{background:#e3f4ed;border-color:#93ceb1;color:#246d51}
 .site-shell .hand-strip{background:#f4f7fc;border-color:#d7e0ee;color:#31405e}.site-shell .hand-strip.hand-drop-active{background:#e3f7eb}
